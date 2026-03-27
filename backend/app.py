@@ -1,0 +1,1 @@
+#FastAPI backend to handle image uploads and return snake prediction using the trained model.
