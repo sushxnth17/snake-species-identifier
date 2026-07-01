@@ -1,2 +1,47 @@
+# Python Cache & Bytecode
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+venv.bak/
+.env
+
+# Datasets & Local Data
 dataset/
+data/
+datasets/
+
+# Trained Models & Machine Learning Artifacts
+*.h5
+*.keras
+*.pb
+*.onnx
+saved_model/
+variables/
+assets/
+fingerprint.pb
+
+# IDE & Editor Configurations
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS-Generated Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs & Temporary Files
+*.log
+.ipynb_checkpoints/
