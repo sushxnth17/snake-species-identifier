@@ -15,6 +15,7 @@ venv.bak/
 # Datasets & Local Data
 dataset/*
 !dataset/README.md
+!dataset/COLLECTION_GUIDE.md
 data/
 datasets/
 
