@@ -13,7 +13,8 @@ venv.bak/
 .env
 
 # Datasets & Local Data
-dataset/
+dataset/*
+!dataset/README.md
 data/
 datasets/
 
