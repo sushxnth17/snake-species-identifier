@@ -1,7 +1,7 @@
 """
 Training script for Snake Species Identifier.
 This module handles loading, splitting, preprocessing, caching, and prefetching of the image dataset,
-as well as building the classification model architecture.
+as well as building, compiling, and training the classification model architecture.
 """
 
 import os
@@ -13,6 +13,8 @@ IMAGE_SIZE = (224, 224)
 BATCH_SIZE = 32
 SEED = 42
 VALIDATION_SPLIT = 0.2
+EPOCHS = 10
+CHECKPOINT_DIR = "models"
 
 
 def preprocess_images(image: tf.Tensor, label: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor]:
@@ -146,6 +148,73 @@ def build_model(num_classes: int, input_shape: tuple = (224, 224, 3)) -> tf.kera
     return model
 
 
+def train_model(model: tf.keras.Model, 
+                train_ds: tf.data.Dataset, 
+                val_ds: tf.data.Dataset, 
+                epochs: int = EPOCHS) -> tf.keras.callbacks.History:
+    """
+    Compiles and trains the tf.keras Model.
+
+    Saves the best model checkpoints based on validation loss, and utilizes
+    early stopping and learning rate reduction strategies.
+
+    Args:
+        model: The uncompiled tf.keras Model.
+        train_ds: Training dataset.
+        val_ds: Validation dataset.
+        epochs: Number of epochs to train.
+
+    Returns:
+        The History object returned by model.fit().
+    """
+    # Create the models/ directory if it doesn't exist
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
+    # 1. Compile model with specified optimizer, loss, and metric
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(),
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+        metrics=["accuracy"]
+    )
+
+    # 2. Configure callbacks for robust training
+    checkpoint_filepath = os.path.join(CHECKPOINT_DIR, "best_snake_model.keras")
+    
+    callbacks = [
+        tf.keras.callbacks.EarlyStopping(
+            monitor="val_loss",
+            patience=3,
+            restore_best_weights=True,
+            verbose=1
+        ),
+        tf.keras.callbacks.ModelCheckpoint(
+            filepath=checkpoint_filepath,
+            monitor="val_loss",
+            save_best_only=True,
+            verbose=1
+        ),
+        tf.keras.callbacks.ReduceLROnPlateau(
+            monitor="val_loss",
+            factor=0.2,
+            patience=2,
+            min_lr=1e-6,
+            verbose=1
+        )
+    ]
+
+    # 3. Fit the model and display progress
+    print(f"Starting training for {epochs} epochs...")
+    history = model.fit(
+        train_ds,
+        validation_data=val_ds,
+        epochs=epochs,
+        callbacks=callbacks,
+        verbose=1
+    )
+
+    return history
+
+
 def main():
     # Load, preprocess and optimize datasets
     train_ds, val_ds, class_names = load_datasets()
@@ -156,6 +225,9 @@ def main():
 
     # Print the model summary
     model.summary()
+
+    # Train the model (callbacks and compilation are handled inside train_model)
+    train_model(model, train_ds, val_ds, epochs=EPOCHS)
 
 
 if __name__ == "__main__":
