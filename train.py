@@ -1,10 +1,11 @@
 """
 Training script for Snake Species Identifier.
 This module handles loading, splitting, preprocessing, caching, and prefetching of the image dataset,
-as well as building, compiling, and training the classification model architecture.
+as well as building, compiling, training, and persisting the classification model and metadata.
 """
 
 import os
+import json
 import tensorflow as tf
 
 # Constants
@@ -228,6 +229,20 @@ def main():
 
     # Train the model (callbacks and compilation are handled inside train_model)
     train_model(model, train_ds, val_ds, epochs=EPOCHS)
+
+    # Ensure models directory exists
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
+    # Save the final model (with best weights restored by EarlyStopping callback)
+    model_save_path = os.path.join(CHECKPOINT_DIR, "snake_classifier.keras")
+    model.save(model_save_path)
+    print(f"Model saved to {model_save_path}")
+
+    # Save class names metadata for the backend
+    class_names_path = os.path.join(CHECKPOINT_DIR, "class_names.json")
+    with open(class_names_path, "w", encoding="utf-8") as f:
+        json.dump(class_names, f, indent=4)
+    print(f"Class names saved to {class_names_path}")
 
 
 if __name__ == "__main__":
