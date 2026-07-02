@@ -1,58 +1,77 @@
-import os
+"""
+Training script for Snake Species Identifier.
+This module handles loading, splitting, caching, and prefetching of the image dataset.
+"""
 
+import os
 import tensorflow as tf
-from tensorflow.keras import layers, models
-from keras.applications import MobileNetV2
+
+# Constants
+DATA_DIR = "dataset"
+IMAGE_SIZE = (224, 224)
+BATCH_SIZE = 32
+SEED = 42
+VALIDATION_SPLIT = 0.2
+
+
+def load_datasets(data_dir: str = DATA_DIR, 
+                  image_size: tuple = IMAGE_SIZE, 
+                  batch_size: int = BATCH_SIZE) -> tuple[tf.data.Dataset, tf.data.Dataset]:
+    """
+    Loads, splits, caches, and prefetches training and validation datasets from a directory.
+
+    Args:
+        data_dir: Path to the root directory containing subdirectory classes.
+        image_size: Target size to resize images to.
+        batch_size: Size of batches of data.
+
+    Returns:
+        A tuple of (train_dataset, validation_dataset).
+    """
+    # Create the training dataset
+    train_ds = tf.keras.utils.image_dataset_from_directory(
+        data_dir,
+        validation_split=VALIDATION_SPLIT,
+        subset="training",
+        seed=SEED,
+        image_size=image_size,
+        batch_size=batch_size,
+    )
+
+    # Create the validation dataset
+    val_ds = tf.keras.utils.image_dataset_from_directory(
+        data_dir,
+        validation_split=VALIDATION_SPLIT,
+        subset="validation",
+        seed=SEED,
+        image_size=image_size,
+        batch_size=batch_size,
+    )
+
+    # Automatically discover class names
+    class_names = train_ds.class_names
+    num_classes = len(class_names)
+    num_train_batches = len(train_ds)
+    num_val_batches = len(val_ds)
+
+    print(f"Number of classes: {num_classes}")
+    print(f"Class names: {class_names}")
+    print(f"Number of training batches: {num_train_batches}")
+    print(f"Number of validation batches: {num_val_batches}")
+
+    # Optimize datasets for performance using caching and prefetching
+    train_ds = train_ds.cache().prefetch(buffer_size=tf.data.AUTOTUNE)
+    val_ds = val_ds.cache().prefetch(buffer_size=tf.data.AUTOTUNE)
+
+    return train_ds, val_ds
 
 
 def main():
-	data_dir = "dataset"
-	image_size = (224, 224)
-	batch_size = 32
-	num_classes = 2
-
-	# Load images from class subfolders (cobra, krait) with integer labels.
-	train_ds = tf.keras.utils.image_dataset_from_directory(
-		data_dir,
-		labels="inferred",
-		label_mode="int",
-		image_size=image_size,
-		batch_size=batch_size,
-		shuffle=True,
-	)
-
-	# Normalize image pixels to match MobileNetV2 expected input range.
-	train_ds = train_ds.map(
-		lambda x, y: (tf.keras.applications.mobilenet_v2.preprocess_input(x), y),
-		num_parallel_calls=tf.data.AUTOTUNE,
-	).prefetch(tf.data.AUTOTUNE)
-
-	base_model = MobileNetV2(
-		input_shape=(224, 224, 3),
-		include_top=False,
-		weights="imagenet",
-	)
-	base_model.trainable = False
-
-	model = models.Sequential(
-		[
-			base_model,
-			layers.GlobalAveragePooling2D(),
-			layers.Dense(64, activation="relu"),
-			layers.Dense(num_classes, activation="softmax"),
-		]
-	)
-
-	model.compile(
-		optimizer="adam",
-		loss="sparse_categorical_crossentropy",
-		metrics=["accuracy"],
-	)
-
-	model.fit(train_ds, epochs=3)
-	model.save("snake_model.h5")
+    # Load and optimize datasets
+    train_ds, val_ds = load_datasets()
 
 
 if __name__ == "__main__":
-	os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
-	main()
+    # Suppress TensorFlow logging warnings
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+    main()
