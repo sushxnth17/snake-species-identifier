@@ -1,12 +1,18 @@
 """
 Training script for Snake Species Identifier.
 This module handles loading, splitting, preprocessing, caching, and prefetching of the image dataset,
-as well as building, compiling, training, and persisting the classification model and metadata.
+as well as building, training, and generating post-training metrics and persistence artifacts.
 """
 
 import os
 import json
 import tensorflow as tf
+
+# Set non-interactive backend for matplotlib before importing pyplot 
+# to ensure it runs correctly in headless or CLI environments without UI windows.
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 # Constants
 DATA_DIR = "dataset"
@@ -216,6 +222,79 @@ def train_model(model: tf.keras.Model,
     return history
 
 
+def generate_report(history: tf.keras.callbacks.History, save_dir: str = CHECKPOINT_DIR):
+    """
+    Generates, saves, and displays post-training metrics and plots.
+
+    Saves training_history.json, accuracy.png, and loss.png to models/ directory.
+    Prints final training and validation loss and accuracy to the console.
+
+    Args:
+        history: The History object returned by model.fit().
+        save_dir: The directory where reporting artifacts will be stored.
+    """
+    # Ensure models directory exists
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Extract final metrics
+    final_epoch = len(history.history["loss"])
+    train_acc = history.history["accuracy"][-1]
+    val_acc = history.history["val_accuracy"][-1]
+    train_loss = history.history["loss"][-1]
+    val_loss = history.history["val_loss"][-1]
+
+    # Print summary metrics to console
+    print("\n" + "=" * 50)
+    print(f"Post-Training Performance Report (Epoch {final_epoch}):")
+    print("-" * 50)
+    print(f"  Training Accuracy:   {train_acc:.4f}")
+    print(f"  Validation Accuracy: {val_acc:.4f}")
+    print(f"  Training Loss:       {train_loss:.4f}")
+    print(f"  Validation Loss:     {val_loss:.4f}")
+    print("=" * 50 + "\n")
+
+    # Serialize history metrics to python types for JSON saving
+    serialized_history = {}
+    for key, val in history.history.items():
+        serialized_history[key] = [float(v) for v in val]
+
+    # Save metrics JSON file
+    history_json_path = os.path.join(save_dir, "training_history.json")
+    with open(history_json_path, "w", encoding="utf-8") as f:
+        json.dump(serialized_history, f, indent=4)
+    print(f"Saved history data to: {history_json_path}")
+
+    epochs_range = range(1, final_epoch + 1)
+
+    # Generate and save accuracy plot
+    plt.figure(figsize=(8, 6))
+    plt.plot(epochs_range, history.history["accuracy"], label="Training Accuracy", marker='o')
+    plt.plot(epochs_range, history.history["val_accuracy"], label="Validation Accuracy", marker='s')
+    plt.title("Model Accuracy Over Epochs")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy")
+    plt.legend(loc="lower right")
+    plt.grid(True, linestyle="--", alpha=0.6)
+    accuracy_plot_path = os.path.join(save_dir, "accuracy.png")
+    plt.savefig(accuracy_plot_path, dpi=150)
+    plt.close()
+    print(f"Saved accuracy chart to: {accuracy_plot_path}")
+
+    # Generate and save loss plot
+    plt.figure(figsize=(8, 6))
+    plt.plot(epochs_range, history.history["loss"], label="Training Loss", marker='o')
+    plt.plot(epochs_range, history.history["val_loss"], label="Validation Loss", marker='s')
+    plt.title("Model Loss Over Epochs")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend(loc="upper right")
+    plt.grid(True, linestyle="--", alpha=0.6)
+    loss_plot_path = os.path.join(save_dir, "loss.png")
+    plt.savefig(loss_plot_path, dpi=150)
+    plt.close()
+    print(f"Saved loss chart to: {loss_plot_path}")
+
+
 def main():
     # Load, preprocess and optimize datasets
     train_ds, val_ds, class_names = load_datasets()
@@ -228,7 +307,7 @@ def main():
     model.summary()
 
     # Train the model (callbacks and compilation are handled inside train_model)
-    train_model(model, train_ds, val_ds, epochs=EPOCHS)
+    history = train_model(model, train_ds, val_ds, epochs=EPOCHS)
 
     # Ensure models directory exists
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
@@ -243,6 +322,9 @@ def main():
     with open(class_names_path, "w", encoding="utf-8") as f:
         json.dump(class_names, f, indent=4)
     print(f"Class names saved to {class_names_path}")
+
+    # Generate post-training reports (metrics display, loss and accuracy charts, history json)
+    generate_report(history, CHECKPOINT_DIR)
 
 
 if __name__ == "__main__":

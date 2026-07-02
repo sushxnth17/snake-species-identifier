@@ -28,6 +28,9 @@ saved_model/
 variables/
 assets/
 fingerprint.pb
+models/*
+!models/class_names.json
+
 
 # IDE & Editor Configurations
 .vscode/
