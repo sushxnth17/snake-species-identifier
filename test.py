@@ -16,6 +16,7 @@ import tensorflow as tf
 MODEL_PATH = os.path.join("models", "snake_classifier.keras")
 CLASS_NAMES_PATH = os.path.join("models", "class_names.json")
 IMAGE_SIZE = (224, 224)
+CONFIDENCE_THRESHOLD = 0.60
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -44,6 +45,12 @@ def parse_arguments() -> argparse.Namespace:
         type=str,
         default=CLASS_NAMES_PATH,
         help="Path to the class names JSON file (default: models/class_names.json)."
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=CONFIDENCE_THRESHOLD,
+        help="Confidence threshold below which prediction is marked uncertain (default: 0.60)."
     )
     return parser.parse_args()
 
@@ -133,7 +140,7 @@ def run_inference(model: tf.keras.Model, preprocessed_img: tf.Tensor) -> tuple[n
     return predictions[0], latency_ms
 
 
-def display_results(predictions: np.ndarray, class_names: list[str], inference_time_ms: float):
+def display_results(predictions: np.ndarray, class_names: list[str], inference_time_ms: float, threshold: float = CONFIDENCE_THRESHOLD):
     """
     Formats and prints prediction probabilities, classification labels, and performance metrics.
 
@@ -141,6 +148,7 @@ def display_results(predictions: np.ndarray, class_names: list[str], inference_t
         predictions: Probability array of predictions for the class labels.
         class_names: List of all target class names.
         inference_time_ms: Latency of the model inference.
+        threshold: Minimum confidence threshold to display the prediction normally.
     """
     predicted_idx = np.argmax(predictions)
     predicted_species = class_names[predicted_idx]
@@ -149,8 +157,13 @@ def display_results(predictions: np.ndarray, class_names: list[str], inference_t
     print("\n" + "=" * 50)
     print("INFERENCE RESULTS REPORT")
     print("=" * 50)
-    print(f"  Predicted Species:     {predicted_species.upper()}")
-    print(f"  Confidence Score:      {confidence_percentage:.2f}%")
+
+    if predictions[predicted_idx] < threshold:
+        print("  Prediction confidence is low. Treat this result as uncertain.")
+    else:
+        print(f"  Predicted Species:     {predicted_species.upper()}")
+        print(f"  Confidence Score:      {confidence_percentage:.2f}%")
+
     print(f"  Inference Latency:     {inference_time_ms:.2f} ms")
     print("-" * 50)
 
@@ -186,7 +199,7 @@ def main():
         predictions, latency_ms = run_inference(model, preprocessed_img)
 
         # Print report
-        display_results(predictions, class_names, latency_ms)
+        display_results(predictions, class_names, latency_ms, args.threshold)
 
     except FileNotFoundError as e:
         print(f"\n[ERROR] File Not Found: {e}", file=sys.stderr)
