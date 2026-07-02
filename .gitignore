@@ -13,7 +13,9 @@ venv.bak/
 .env
 
 # Datasets & Local Data
-dataset/
+dataset/*
+!dataset/README.md
+!dataset/COLLECTION_GUIDE.md
 data/
 datasets/
 
@@ -26,6 +28,9 @@ saved_model/
 variables/
 assets/
 fingerprint.pb
+models/*
+!models/class_names.json
+
 
 # IDE & Editor Configurations
 .vscode/
