@@ -1,7 +1,8 @@
 """
 Inference script for Snake Species Identifier.
 This module loads a trained TensorFlow model and metadata, preprocesses a target image,
-runs inference, and logs predicted species and confidence metrics.
+runs inference, logs predicted species and confidence metrics, and displays the image
+with the prediction as the title.
 """
 
 import os
@@ -11,6 +12,8 @@ import time
 import argparse
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
+from PIL import Image
 
 # Constants
 MODEL_PATH = os.path.join("models", "snake_classifier.keras")
@@ -180,6 +183,39 @@ def display_results(predictions: np.ndarray, class_names: list[str], inference_t
     print("=" * 50 + "\n")
 
 
+def display_image_with_prediction(image_path: str, predicted_species: str, confidence: float, threshold: float):
+    """
+    Displays the original image using matplotlib with the prediction as the title.
+
+    Args:
+        image_path: Path to the target image file.
+        predicted_species: Name of the predicted class.
+        confidence: Confidence score of the prediction (percentage, e.g., 95.5).
+        threshold: Minimum confidence threshold.
+    """
+    try:
+        # Load the original image using PIL
+        img = Image.open(image_path)
+    except Exception as e:
+        print(f"[WARNING] Could not load image for visualization: {e}")
+        return
+
+    plt.figure(figsize=(6, 6))
+    plt.imshow(img)
+    plt.axis("off")
+
+    # Set prediction message as title
+    if confidence / 100.0 < threshold:
+        title = "Low Confidence Prediction\nTreat result as uncertain"
+    else:
+        title = f"Predicted Species: {predicted_species.upper()}\nConfidence: {confidence:.2f}%"
+
+    plt.title(title, fontsize=14, fontweight="bold", pad=10)
+    plt.tight_layout()
+    print("Displaying image window. Close the window to exit...")
+    plt.show()
+
+
 def main():
     # Configure logging and parse args
     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
@@ -200,6 +236,12 @@ def main():
 
         # Print report
         display_results(predictions, class_names, latency_ms, args.threshold)
+
+        # Display image with prediction title
+        predicted_idx = np.argmax(predictions)
+        predicted_species = class_names[predicted_idx]
+        confidence_percentage = predictions[predicted_idx] * 100
+        display_image_with_prediction(args.image_path, predicted_species, confidence_percentage, args.threshold)
 
     except FileNotFoundError as e:
         print(f"\n[ERROR] File Not Found: {e}", file=sys.stderr)
