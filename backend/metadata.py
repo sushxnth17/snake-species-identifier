@@ -4,21 +4,27 @@ from typing import Dict, Any
 # Keys are lowercase to match normalized predicted labels.
 SNAKE_METADATA: Dict[str, Dict[str, Any]] = {
     "cobra": {
+        "common_name": "Spectacled Cobra",
         "scientific_name": "Naja naja",
         "venomous": True,
+        "description": "The Indian cobra or spectacled cobra is a highly venomous species of the genus Naja found in the Indian subcontinent. It is characterized by its signature hood and spectacled mark on the back of its neck, and is a member of the 'Big Four' snakes responsible for most bites.",
+        "habitat": "Found in forests, wetlands, grasslands, agricultural areas, and near human settlements.",
         "first_aid": (
             "1. Keep the victim calm and reassured to slow venom circulation.\n"
-            "2. Immobilize the bitten limb using a splint or bandage (do not wrap too tight).\n"
+            "2. Immobilize the bitten limb using a splint or loose bandage.\n"
             "3. Remove rings, bracelets, or tight clothing near the bite area.\n"
             "4. Transport the victim immediately to the nearest medical facility with anti-venom.\n"
             "5. DO NOT cut the bite site, apply a tourniquet, or try to suck out the venom."
         )
     },
     "krait": {
+        "common_name": "Common Krait",
         "scientific_name": "Bungarus caeruleus",
         "venomous": True,
+        "description": "The common krait is a highly venomous species of snake native to the Indian subcontinent. It is nocturnal, secretive, and active mainly at night. Krait bites can be painless and hard to detect, but they carry a highly neurotoxic venom that causes progressive muscular paralysis and respiratory failure.",
+        "habitat": "Fields, low scrub forests, agricultural lands, and often enters human dwellings at night in search of food.",
         "first_aid": (
-            "1. Keep the victim completely still; krait bites can be painless but are highly neurotoxic.\n"
+            "1. Keep the victim completely still. Krait bites can be painless but are highly neurotoxic.\n"
             "2. Apply a broad pressure immobilization bandage over the entire bitten limb.\n"
             "3. Seek emergency medical attention immediately. Keep breathing airways clear.\n"
             "4. DO NOT wash the bite site (venom residue can help identify the snake later).\n"
@@ -27,19 +33,25 @@ SNAKE_METADATA: Dict[str, Dict[str, Any]] = {
     }
 }
 
+DEFAULT_METADATA: Dict[str, Any] = {
+    "common_name": "Unknown Snake Species",
+    "scientific_name": "Unknown",
+    "venomous": False,
+    "description": "No detailed safety information is available for this species.",
+    "habitat": "Unknown",
+    "first_aid": "Keep the victim calm, immobilize the bitten limb, and seek emergency medical care immediately."
+}
+
 def get_snake_metadata(species_name: str) -> Dict[str, Any]:
     """
-    Retrieves safety metadata for a given snake species by name.
+    Retrieves safety and taxonomic metadata for a given snake species by name.
     
     Args:
         species_name: The predicted snake species name.
         
     Returns:
-        A dictionary containing scientific name, venom status, and first-aid instructions.
+        A dictionary containing common_name, scientific_name, venomous status, description,
+        habitat, and first-aid instructions.
     """
     normalized_name = species_name.lower().strip()
-    return SNAKE_METADATA.get(normalized_name, {
-        "scientific_name": "Unknown",
-        "venomous": False,
-        "first_aid": "Seek general medical attention if bitten by any unidentified snake species."
-    })
+    return SNAKE_METADATA.get(normalized_name, DEFAULT_METADATA)

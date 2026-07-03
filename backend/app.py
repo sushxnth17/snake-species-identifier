@@ -121,9 +121,13 @@ async def predict_species(file: UploadFile = File(...)):
         # 7. Extract predicted class and confidence
         predicted_species, confidence = predictor.format_prediction_results(raw_predictions, class_names)
         
+        # 8. Retrieve Safety and Taxonomic Metadata
+        meta_dict = get_snake_metadata(predicted_species)
+        
         return PredictionResponse(
             species=predicted_species,
-            confidence=confidence
+            confidence=confidence,
+            metadata=meta_dict
         )
         
     except HTTPException as he:
