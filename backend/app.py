@@ -7,7 +7,7 @@ import time
 import logging
 
 from backend.config import APP_TITLE, APP_DESCRIPTION, APP_VERSION, ALLOWED_ORIGINS, ALLOWED_MIME_TYPES, MAX_UPLOAD_SIZE
-from backend.schemas import PredictionResponse
+from backend.schemas import PredictionResponse, ErrorResponse
 from backend.utils import setup_logging
 from backend import model_loader
 from backend import predictor
@@ -105,7 +105,25 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    summary="Check System Health",
+    description="Verifies the operational status of the API service, CORS bindings, and checks whether the TensorFlow classification model has successfully loaded into memory.",
+    response_description="A JSON status object indicating health and model load state.",
+    responses={
+        200: {
+            "description": "API is healthy and running.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "healthy",
+                        "model_loaded": True
+                    }
+                }
+            }
+        }
+    }
+)
 def health_check():
     """
     Health check endpoint to verify backend status and model readiness.
@@ -116,8 +134,50 @@ def health_check():
         "model_loaded": model_loaded
     }
 
-@app.post("/predict", response_model=PredictionResponse)
-async def predict_species(file: UploadFile = File(...)):
+@app.post(
+    "/predict",
+    response_model=PredictionResponse,
+    summary="Predict Snake Species from Image",
+    description=(
+        "Uploads a picture of a snake and runs deep-learning classification.\n\n"
+        "**Validations Executed**:\n"
+        "- **File Existence**: Verifies the payload is not empty.\n"
+        "- **MIME Type**: Restricts uploads to standard images (`image/jpeg`, `image/png`, `image/webp`).\n"
+        "- **Max File Size**: Caps uploads at 5MB.\n\n"
+        "**Inference Pipeline**:\n"
+        "1. Decodes and scales input using MobileNetV2 preprocessing parameters.\n"
+        "2. Performs prediction on the loaded neural network model.\n"
+        "3. Fetches taxonomic description, danger class, and emergency first-aid guidelines."
+    ),
+    response_description="Enriched snake prediction detailing species, confidence, scientific name, and first-aid recommendations.",
+    responses={
+        200: {
+            "model": PredictionResponse,
+            "description": "Inference successfully completed."
+        },
+        400: {
+            "model": ErrorResponse,
+            "description": "Bad Request. Uploaded file is empty, corrupted, or has invalid data format."
+        },
+        413: {
+            "model": ErrorResponse,
+            "description": "Payload Too Large. Uploaded image file size exceeds the 5MB limit."
+        },
+        415: {
+            "model": ErrorResponse,
+            "description": "Unsupported Media Type. Uploaded file format or MIME type is not allowed."
+        },
+        500: {
+            "model": ErrorResponse,
+            "description": "Internal Server Error. Encountered unhandled exception during processing or inference."
+        },
+        503: {
+            "model": ErrorResponse,
+            "description": "Service Unavailable. Model has not been initialized or required files are missing."
+        }
+    }
+)
+async def predict_species(file: UploadFile = File(..., description="The binary image of the snake to classify (JPEG, PNG, or WebP format).")):
     """
     Accepts an uploaded image of a snake and predicts its species.
     Validates file existence, MIME type, and size limits before running inference.
