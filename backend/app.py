@@ -1,4 +1,6 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import time
@@ -50,6 +52,59 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Global Exception Handlers ---
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    logger.error(f"HTTPException: status_code={exc.status_code}, detail={exc.detail}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": {"code": exc.status_code, "message": exc.detail}}
+    )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    logger.error(f"RequestValidationError: {errors}")
+    error_msg = "; ".join([f"{'.'.join(str(loc) for loc in err['loc'])}: {err['msg']}" for err in errors])
+    return JSONResponse(
+        status_code=422,
+        content={"error": {"code": 422, "message": f"Validation Error: {error_msg}"}}
+    )
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError):
+    logger.error(f"ValueError: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=400,
+        content={"error": {"code": 400, "message": f"Bad Request: {str(exc)}"}}
+    )
+
+@app.exception_handler(FileNotFoundError)
+async def file_not_found_handler(request: Request, exc: FileNotFoundError):
+    logger.error(f"FileNotFoundError: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=503,
+        content={"error": {"code": 503, "message": f"Service Unavailable: Required resource missing ({str(exc)})"}}
+    )
+
+@app.exception_handler(RuntimeError)
+async def runtime_error_handler(request: Request, exc: RuntimeError):
+    logger.error(f"RuntimeError: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"error": {"code": 500, "message": f"Internal Server Error: {str(exc)}"}}
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger.exception(f"Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"error": {"code": 500, "message": "An unexpected error occurred on the server."}}
+    )
+
+
 @app.get("/health")
 def health_check():
     """
@@ -75,66 +130,56 @@ async def predict_species(file: UploadFile = File(...)):
             detail=f"Unsupported media type: '{file.content_type}'. Allowed types: {', '.join(ALLOWED_MIME_TYPES)}"
         )
         
-    try:
-        # Read file content into memory
-        image_bytes = await file.read()
+    # Read file content into memory
+    image_bytes = await file.read()
+    
+    # 2. Validate file existence
+    if not image_bytes or len(image_bytes) == 0:
+        logger.warning("Rejected upload with empty file content.")
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
         
-        # 2. Validate file existence
-        if not image_bytes or len(image_bytes) == 0:
-            logger.warning("Rejected upload with empty file content.")
-            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-            
-        # 3. Validate maximum upload size
-        if len(image_bytes) > MAX_UPLOAD_SIZE:
-            max_mb = MAX_UPLOAD_SIZE / (1024 * 1024)
-            logger.warning(f"Rejected upload exceeding maximum size limit: {len(image_bytes)} bytes")
-            raise HTTPException(
-                status_code=413,
-                detail=f"File size exceeds the maximum limit of {max_mb:.1f}MB."
-            )
-            
-        # 4. Preprocess image
-        preprocessed = predictor.preprocess_image(image_bytes)
-        
-        # 5. Run prediction
-        try:
-            model = model_loader.get_model()
-        except RuntimeError as e:
-            logger.warning("Model was not loaded on startup. Attempting lazy load...")
-            try:
-                model = model_loader.load_model()
-            except Exception as lazy_err:
-                logger.error(f"Lazy loading model failed: {lazy_err}")
-                raise HTTPException(
-                    status_code=503,
-                    detail="Model is not available. Please try again later."
-                )
-                
-        raw_predictions = predictor.predict(model, preprocessed)
-        
-        # 6. Read class names
-        try:
-            class_names = model_loader.get_class_names()
-        except Exception:
-            class_names = model_loader.load_class_names()
-            
-        # 7. Extract predicted class and confidence
-        predicted_species, confidence = predictor.format_prediction_results(raw_predictions, class_names)
-        
-        # 8. Retrieve Safety and Taxonomic Metadata
-        meta_dict = get_snake_metadata(predicted_species)
-        
-        return PredictionResponse(
-            species=predicted_species,
-            confidence=confidence,
-            metadata=meta_dict
+    # 3. Validate maximum upload size
+    if len(image_bytes) > MAX_UPLOAD_SIZE:
+        max_mb = MAX_UPLOAD_SIZE / (1024 * 1024)
+        logger.warning(f"Rejected upload exceeding maximum size limit: {len(image_bytes)} bytes")
+        raise HTTPException(
+            status_code=413,
+            detail=f"File size exceeds the maximum limit of {max_mb:.1f}MB."
         )
         
-    except HTTPException as he:
-        raise he
-    except ValueError as ve:
-        logger.error(f"Value error during prediction pipeline: {ve}")
-        raise HTTPException(status_code=400, detail=str(ve))
-    except Exception as e:
-        logger.exception("Unexpected error in prediction pipeline")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    # 4. Preprocess image
+    preprocessed = predictor.preprocess_image(image_bytes)
+    
+    # 5. Run prediction
+    try:
+        model = model_loader.get_model()
+    except RuntimeError as e:
+        logger.warning("Model was not loaded on startup. Attempting lazy load...")
+        try:
+            model = model_loader.load_model()
+        except Exception as lazy_err:
+            logger.error(f"Lazy loading model failed: {lazy_err}")
+            raise HTTPException(
+                status_code=503,
+                detail="Model is not available. Please try again later."
+            )
+            
+    raw_predictions = predictor.predict(model, preprocessed)
+    
+    # 6. Read class names
+    try:
+        class_names = model_loader.get_class_names()
+    except Exception:
+        class_names = model_loader.load_class_names()
+        
+    # 7. Extract predicted class and confidence
+    predicted_species, confidence = predictor.format_prediction_results(raw_predictions, class_names)
+    
+    # 8. Retrieve Safety and Taxonomic Metadata
+    meta_dict = get_snake_metadata(predicted_species)
+    
+    return PredictionResponse(
+        species=predicted_species,
+        confidence=confidence,
+        metadata=meta_dict
+    )
