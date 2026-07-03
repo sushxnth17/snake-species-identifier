@@ -7,7 +7,7 @@ import logging
 from backend.config import APP_TITLE, APP_DESCRIPTION, APP_VERSION, ALLOWED_ORIGINS
 from backend.schemas import PredictionResponse, SnakeMetadata, PredictionClassProbability
 from backend.utils import setup_logging
-from backend.model_loader import ModelLoader
+from backend import model_loader
 from backend import predictor
 from backend.metadata import get_snake_metadata
 
@@ -22,7 +22,8 @@ async def lifespan(app: FastAPI):
     # so routes can still be served (especially for frontend/API debugging).
     logger.info("Initializing application resources during startup lifespan...")
     try:
-        ModelLoader.initialize()
+        model_loader.load_model()
+        model_loader.load_class_names()
         logger.info("Initialization completed successfully.")
     except Exception as e:
         logger.error(
@@ -54,7 +55,7 @@ def health_check():
     """
     Health check endpoint to verify backend status and model readiness.
     """
-    model_loaded = ModelLoader._model is not None
+    model_loaded = model_loader._model is not None
     return {
         "status": "healthy",
         "model_loaded": model_loaded
@@ -78,18 +79,27 @@ async def predict_species(file: UploadFile = File(...)):
         # 1. Preprocess the image
         preprocessed = predictor.preprocess_image(image_bytes)
         
-        # 2. Get the loaded model (None if load failed on startup)
-        model = ModelLoader._model
+        # 2. Get the loaded model
+        try:
+            model = model_loader.get_model()
+        except RuntimeError:
+            logger.warning("Model was not loaded on startup. Attempting lazy load...")
+            try:
+                model = model_loader.load_model()
+            except Exception:
+                model = None
         
         # 3. Model Prediction
         raw_predictions = predictor.predict(model, preprocessed)
         
         # 4. Read class names
-        # Fallback to local hardcoded class list if file loading failed
         try:
-            class_names = ModelLoader.load_class_names()
+            class_names = model_loader.get_class_names()
         except Exception:
-            class_names = ["cobra", "krait"]
+            try:
+                class_names = model_loader.load_class_names()
+            except Exception:
+                class_names = ["cobra", "krait"]
             
         # 5. Extract top species and full probability breakdown
         predicted_species, confidence, probs = predictor.format_prediction_results(raw_predictions, class_names)
