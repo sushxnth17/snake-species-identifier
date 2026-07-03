@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 import time
 import logging
 
-from backend.config import APP_TITLE, APP_DESCRIPTION, APP_VERSION, ALLOWED_ORIGINS
-from backend.schemas import PredictionResponse, SnakeMetadata, PredictionClassProbability
+from backend.config import APP_TITLE, APP_DESCRIPTION, APP_VERSION, ALLOWED_ORIGINS, ALLOWED_MIME_TYPES, MAX_UPLOAD_SIZE
+from backend.schemas import PredictionResponse
 from backend.utils import setup_logging
 from backend import model_loader
 from backend import predictor
@@ -64,67 +64,73 @@ def health_check():
 @app.post("/predict", response_model=PredictionResponse)
 async def predict_species(file: UploadFile = File(...)):
     """
-    Accepts an uploaded image of a snake and predicts its species, returning
-    taxonomic classification, safety warnings, and first-aid recommendations.
+    Accepts an uploaded image of a snake and predicts its species.
+    Validates file existence, MIME type, and size limits before running inference.
     """
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Uploaded file must be a valid image.")
-
-    start_time = time.perf_counter()
-    
+    # 1. Validate MIME type first (quick check on headers)
+    if file.content_type not in ALLOWED_MIME_TYPES:
+        logger.warning(f"Rejected upload with unsupported MIME type: {file.content_type}")
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported media type: '{file.content_type}'. Allowed types: {', '.join(ALLOWED_MIME_TYPES)}"
+        )
+        
     try:
-        # Read raw image bytes
+        # Read file content into memory
         image_bytes = await file.read()
         
-        # 1. Preprocess the image
+        # 2. Validate file existence
+        if not image_bytes or len(image_bytes) == 0:
+            logger.warning("Rejected upload with empty file content.")
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+            
+        # 3. Validate maximum upload size
+        if len(image_bytes) > MAX_UPLOAD_SIZE:
+            max_mb = MAX_UPLOAD_SIZE / (1024 * 1024)
+            logger.warning(f"Rejected upload exceeding maximum size limit: {len(image_bytes)} bytes")
+            raise HTTPException(
+                status_code=413,
+                detail=f"File size exceeds the maximum limit of {max_mb:.1f}MB."
+            )
+            
+        # 4. Preprocess image
         preprocessed = predictor.preprocess_image(image_bytes)
         
-        # 2. Get the loaded model
+        # 5. Run prediction
         try:
             model = model_loader.get_model()
-        except RuntimeError:
+        except RuntimeError as e:
             logger.warning("Model was not loaded on startup. Attempting lazy load...")
             try:
                 model = model_loader.load_model()
-            except Exception:
-                model = None
-        
-        # 3. Model Prediction
+            except Exception as lazy_err:
+                logger.error(f"Lazy loading model failed: {lazy_err}")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Model is not available. Please try again later."
+                )
+                
         raw_predictions = predictor.predict(model, preprocessed)
         
-        # 4. Read class names
+        # 6. Read class names
         try:
             class_names = model_loader.get_class_names()
         except Exception:
-            try:
-                class_names = model_loader.load_class_names()
-            except Exception:
-                class_names = ["cobra", "krait"]
+            class_names = model_loader.load_class_names()
             
-        # 5. Extract top species and full probability breakdown
-        predicted_species, confidence, probs = predictor.format_prediction_results(raw_predictions, class_names)
-        
-        # 6. Retrieve Safety Metadata
-        meta_dict = get_snake_metadata(predicted_species)
-        snake_meta = SnakeMetadata(**meta_dict)
-        
-        # Calculate latency
-        inference_time_ms = (time.perf_counter() - start_time) * 1000
-        
-        # Map probability dicts to Pydantic objects
-        response_probs = [
-            PredictionClassProbability(species=p["species"], probability=p["probability"])
-            for p in probs
-        ]
+        # 7. Extract predicted class and confidence
+        predicted_species, confidence = predictor.format_prediction_results(raw_predictions, class_names)
         
         return PredictionResponse(
-            predicted_species=predicted_species,
-            confidence=confidence,
-            metadata=snake_meta,
-            probabilities=response_probs,
-            inference_time_ms=inference_time_ms
+            species=predicted_species,
+            confidence=confidence
         )
         
+    except HTTPException as he:
+        raise he
+    except ValueError as ve:
+        logger.error(f"Value error during prediction pipeline: {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        logger.exception("Prediction endpoint encountered an error")
-        raise HTTPException(status_code=500, detail=f"Inference error: {str(e)}")
+        logger.exception("Unexpected error in prediction pipeline")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

@@ -21,3 +21,8 @@ APP_VERSION = "1.0.0"
 # CORS configurations
 # Allowing all origins for local development; can be tightened for production
 ALLOWED_ORIGINS = ["*"]
+
+# Image upload validation configurations
+MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5 MB
+ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"]
+
