@@ -15,10 +15,12 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from PIL import Image
 
+from ml.constants import IMAGE_SIZE, MODEL_NAME
+from ml.inference import preprocess_single_image, predict_helper, calculate_confidence
+
 # Constants
-MODEL_PATH = os.path.join("models", "snake_classifier.keras")
+MODEL_PATH = os.path.join("models", f"{MODEL_NAME}.keras")
 CLASS_NAMES_PATH = os.path.join("models", "class_names.json")
-IMAGE_SIZE = (224, 224)
 CONFIDENCE_THRESHOLD = 0.60
 
 
@@ -104,23 +106,12 @@ def preprocess_image(image_path: str, target_size: tuple = IMAGE_SIZE) -> tf.Ten
     Returns:
         A preprocessed image tensor of shape (1, height, width, 3).
     """
-    if not os.path.exists(image_path):
-        raise FileNotFoundError(f"Target image file not found at: {image_path}")
-
-    # Load and decode image using tf.keras utilities
     try:
-        # load_img handles loading and resizing to target size
-        img = tf.keras.utils.load_img(image_path, target_size=target_size)
-        img_array = tf.keras.utils.img_to_array(img)
+        return preprocess_single_image(image_path, target_size=target_size)
+    except FileNotFoundError:
+        raise
     except Exception as e:
         raise ValueError(f"Unable to load or decode image. Ensure file is a valid image. Details: {e}")
-
-    # Expand dimensions to fit batch format (batch_size=1, height, width, channels)
-    img_batch = np.expand_dims(img_array, axis=0)
-
-    # Normalize image pixels to [-1, 1] using MobileNetV2 expected scaling
-    preprocessed_img = tf.keras.applications.mobilenet_v2.preprocess_input(img_batch)
-    return preprocessed_img
 
 
 def run_inference(model: tf.keras.Model, preprocessed_img: tf.Tensor) -> tuple[np.ndarray, float]:
@@ -134,9 +125,8 @@ def run_inference(model: tf.keras.Model, preprocessed_img: tf.Tensor) -> tuple[n
     Returns:
         A tuple of (predictions_array, inference_latency_ms).
     """
-    # Warm up / run prediction measuring high-precision wall time
     start_time = time.perf_counter()
-    predictions = model.predict(preprocessed_img, verbose=0)
+    predictions = predict_helper(model, preprocessed_img)
     end_time = time.perf_counter()
 
     latency_ms = (end_time - start_time) * 1000
@@ -153,15 +143,15 @@ def display_results(predictions: np.ndarray, class_names: list[str], inference_t
         inference_time_ms: Latency of the model inference.
         threshold: Minimum confidence threshold to display the prediction normally.
     """
-    predicted_idx = np.argmax(predictions)
-    predicted_species = class_names[predicted_idx]
-    confidence_percentage = predictions[predicted_idx] * 100
+    predicted_species, confidence = calculate_confidence(predictions, class_names)
+    confidence_percentage = confidence * 100
+    predicted_idx = class_names.index(predicted_species)
 
     print("\n" + "=" * 50)
     print("INFERENCE RESULTS REPORT")
     print("=" * 50)
 
-    if predictions[predicted_idx] < threshold:
+    if confidence < threshold:
         print("  Prediction confidence is low. Treat this result as uncertain.")
     else:
         print(f"  Predicted Species:     {predicted_species.upper()}")
@@ -238,9 +228,8 @@ def main():
         display_results(predictions, class_names, latency_ms, args.threshold)
 
         # Display image with prediction title
-        predicted_idx = np.argmax(predictions)
-        predicted_species = class_names[predicted_idx]
-        confidence_percentage = predictions[predicted_idx] * 100
+        predicted_species, confidence = calculate_confidence(predictions, class_names)
+        confidence_percentage = confidence * 100
         display_image_with_prediction(args.image_path, predicted_species, confidence_percentage, args.threshold)
 
     except FileNotFoundError as e:

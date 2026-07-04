@@ -18,11 +18,12 @@ import matplotlib.pyplot as plt
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, ConfusionMatrixDisplay
 
-# Import load_datasets from train.py to reuse dataset loaders
-from train import load_datasets, CHECKPOINT_DIR
+from train import CHECKPOINT_DIR
+from ml.constants import MODEL_NAME
+from ml.dataset import load_and_preprocess_dataset
 
 # File Path Constants
-MODEL_PATH = os.path.join(CHECKPOINT_DIR, "snake_classifier.keras")
+MODEL_PATH = os.path.join(CHECKPOINT_DIR, f"{MODEL_NAME}.keras")
 CLASS_NAMES_PATH = os.path.join(CHECKPOINT_DIR, "class_names.json")
 
 
@@ -50,8 +51,8 @@ def evaluate_model(model_path: str = MODEL_PATH,
 
     # 1. Load the validation dataset using the same configuration as training
     print("Loading validation dataset...")
-    # load_datasets returns train_ds, val_ds, class_names
-    _, val_ds, class_names = load_datasets()
+    # load_and_preprocess_dataset returns train_ds, val_ds, class_names
+    _, val_ds, class_names = load_and_preprocess_dataset(data_dir="dataset")
 
     # 2. Load the trained model
     print(f"Loading trained model from {model_path}...")

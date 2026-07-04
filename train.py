@@ -14,91 +14,13 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+from ml.constants import IMAGE_SIZE, BATCH_SIZE, RANDOM_SEED, VALIDATION_SPLIT, MODEL_NAME
+from ml.dataset import load_and_preprocess_dataset
+
 # Constants
 DATA_DIR = "dataset"
-IMAGE_SIZE = (224, 224)
-BATCH_SIZE = 32
-SEED = 42
-VALIDATION_SPLIT = 0.2
 EPOCHS = 10
 CHECKPOINT_DIR = "models"
-
-
-def preprocess_images(image: tf.Tensor, label: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor]:
-    """
-    Normalizes input images for MobileNetV2.
-
-    MobileNetV2 expects input pixel values in the range [-1, 1].
-    The function tf.keras.applications.mobilenet_v2.preprocess_input performs
-    this normalization by scaling the pixel values (originally in [0, 255])
-    accordingly: (pixel / 127.5) - 1.0.
-
-    Args:
-        image: A tensor representing the batch of input images.
-        label: A tensor representing the batch of corresponding labels.
-
-    Returns:
-        A tuple containing the normalized images and their labels.
-    """
-    # Normalize pixel values to [-1, 1] using MobileNetV2 preprocessing logic
-    normalized_image = tf.keras.applications.mobilenet_v2.preprocess_input(image)
-    return normalized_image, label
-
-
-def load_datasets(data_dir: str = DATA_DIR, 
-                  image_size: tuple = IMAGE_SIZE, 
-                  batch_size: int = BATCH_SIZE) -> tuple[tf.data.Dataset, tf.data.Dataset, list[str]]:
-    """
-    Loads, splits, preprocesses, caches, and prefetches training and validation datasets from a directory.
-
-    Args:
-        data_dir: Path to the root directory containing subdirectory classes.
-        image_size: Target size to resize images to.
-        batch_size: Size of batches of data.
-
-    Returns:
-        A tuple of (train_dataset, validation_dataset, class_names).
-    """
-    # Create the training dataset
-    train_ds = tf.keras.utils.image_dataset_from_directory(
-        data_dir,
-        validation_split=VALIDATION_SPLIT,
-        subset="training",
-        seed=SEED,
-        image_size=image_size,
-        batch_size=batch_size,
-    )
-
-    # Create the validation dataset
-    val_ds = tf.keras.utils.image_dataset_from_directory(
-        data_dir,
-        validation_split=VALIDATION_SPLIT,
-        subset="validation",
-        seed=SEED,
-        image_size=image_size,
-        batch_size=batch_size,
-    )
-
-    # Automatically discover class names
-    class_names = train_ds.class_names
-    num_classes = len(class_names)
-    num_train_batches = len(train_ds)
-    num_val_batches = len(val_ds)
-
-    print(f"Number of classes: {num_classes}")
-    print(f"Class names: {class_names}")
-    print(f"Number of training batches: {num_train_batches}")
-    print(f"Number of validation batches: {num_val_batches}")
-
-    # Apply preprocessing (normalization) via Dataset.map() using AUTOTUNE
-    train_ds = train_ds.map(preprocess_images, num_parallel_calls=tf.data.AUTOTUNE)
-    val_ds = val_ds.map(preprocess_images, num_parallel_calls=tf.data.AUTOTUNE)
-
-    # Optimize datasets for performance using caching and prefetching
-    train_ds = train_ds.cache().prefetch(buffer_size=tf.data.AUTOTUNE)
-    val_ds = val_ds.cache().prefetch(buffer_size=tf.data.AUTOTUNE)
-
-    return train_ds, val_ds, class_names
 
 
 def build_model(num_classes: int, input_shape: tuple = (224, 224, 3)) -> tf.keras.Model:
@@ -296,8 +218,14 @@ def generate_report(history: tf.keras.callbacks.History, save_dir: str = CHECKPO
 
 
 def main():
-    # Load, preprocess and optimize datasets
-    train_ds, val_ds, class_names = load_datasets()
+    # Load, preprocess and optimize datasets using the centralized pipeline
+    train_ds, val_ds, class_names = load_and_preprocess_dataset(
+        data_dir=DATA_DIR,
+        image_size=IMAGE_SIZE,
+        batch_size=BATCH_SIZE,
+        validation_split=VALIDATION_SPLIT,
+        seed=RANDOM_SEED
+    )
 
     # Build model using the number of classes discovered
     num_classes = len(class_names)
@@ -313,7 +241,7 @@ def main():
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
     # Save the final model (with best weights restored by EarlyStopping callback)
-    model_save_path = os.path.join(CHECKPOINT_DIR, "snake_classifier.keras")
+    model_save_path = os.path.join(CHECKPOINT_DIR, f"{MODEL_NAME}.keras")
     model.save(model_save_path)
     print(f"Model saved to {model_save_path}")
 
