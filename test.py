@@ -5,23 +5,23 @@ runs inference, logs predicted species and confidence metrics, and displays the 
 with the prediction as the title.
 """
 
+import argparse
+import json
 import os
 import sys
-import json
 import time
-import argparse
-import numpy as np
-import tensorflow as tf
-import matplotlib.pyplot as plt
-from PIL import Image
 
-from ml.constants import IMAGE_SIZE, MODEL_NAME
+import matplotlib.pyplot as plt
+import numpy as np
+from PIL import Image
+import tensorflow as tf
+
+from ml.constants import CONFIDENCE_THRESHOLD, IMAGE_SIZE, MODEL_NAME, TOP_K_PREDICTIONS
 from ml.inference import preprocess_single_image, predict_helper, calculate_confidence
 
 # Constants
 MODEL_PATH = os.path.join("models", f"{MODEL_NAME}.keras")
 CLASS_NAMES_PATH = os.path.join("models", "class_names.json")
-CONFIDENCE_THRESHOLD = 0.60
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -160,8 +160,8 @@ def display_results(predictions: np.ndarray, class_names: list[str], inference_t
     print(f"  Inference Latency:     {inference_time_ms:.2f} ms")
     print("-" * 50)
 
-    # Calculate Top 3 (or less if the model has fewer classes)
-    num_predictions_to_show = min(3, len(class_names))
+    # Calculate Top K predictions (or less if the model has fewer classes)
+    num_predictions_to_show = min(TOP_K_PREDICTIONS, len(class_names))
     top_indices = np.argsort(predictions)[::-1][:num_predictions_to_show]
 
     print("  Ranked Probabilities:")

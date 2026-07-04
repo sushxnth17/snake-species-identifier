@@ -4,35 +4,40 @@ This module handles loading, splitting, preprocessing, caching, and prefetching 
 as well as building, training, and generating post-training metrics and persistence artifacts.
 """
 
-import os
 import json
-import tensorflow as tf
+import os
+from typing import Tuple
 
 # Set non-interactive backend for matplotlib before importing pyplot 
 # to ensure it runs correctly in headless or CLI environments without UI windows.
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import tensorflow as tf
 
-from ml.constants import IMAGE_SIZE, BATCH_SIZE, RANDOM_SEED, VALIDATION_SPLIT, MODEL_NAME
+from ml.constants import (
+    IMAGE_SIZE, BATCH_SIZE, RANDOM_SEED, VALIDATION_SPLIT, MODEL_NAME,
+    DROPOUT_RATE, DENSE_UNITS, EARLY_STOPPING_PATIENCE, REDUCE_LR_FACTOR,
+    REDUCE_LR_PATIENCE, REDUCE_LR_MIN, DEFAULT_FIG_SIZE, PLOT_DPI
+)
 from ml.dataset import load_and_preprocess_dataset
 
-# Constants
-DATA_DIR = "dataset"
-EPOCHS = 10
-CHECKPOINT_DIR = "models"
+# Configuration Constants
+DATA_DIR: str = "dataset"
+EPOCHS: int = 10
+CHECKPOINT_DIR: str = "models"
 
 
-def build_model(num_classes: int, input_shape: tuple = (224, 224, 3)) -> tf.keras.Model:
+def build_model(num_classes: int, input_shape: Tuple[int, int, int] = (224, 224, 3)) -> tf.keras.Model:
     """
     Builds a snake species classification model using the tf.keras Functional API.
 
     This architecture uses a MobileNetV2 backbone pretrained on ImageNet as a feature extractor.
     All base model layers are frozen. A custom classification head is appended, containing:
     1. GlobalAveragePooling2D to reduce feature maps to a single vector per image.
-    2. Dropout (0.2) to prevent overfitting during training.
-    3. Dense (128 units, ReLU activation) for representation learning.
-    4. Dense (num_classes, Softmax activation) for multi-class classification.
+    2. Dropout to prevent overfitting during training.
+    3. Dense layer for representation learning.
+    4. Dense layer for multi-class classification.
 
     Args:
         num_classes: Number of output target classes.
@@ -41,46 +46,37 @@ def build_model(num_classes: int, input_shape: tuple = (224, 224, 3)) -> tf.kera
     Returns:
         An uncompiled tf.keras.Model instance.
     """
-    # 1. Define inputs
     inputs = tf.keras.Input(shape=input_shape, name="input_image")
 
-    # 2. Base model: Pretrained MobileNetV2, excluding top classification layers
+    # Base model: Pretrained MobileNetV2, excluding top classification layers
     base_model = tf.keras.applications.MobileNetV2(
         input_shape=input_shape,
         include_top=False,
         weights="imagenet"
     )
 
-    # Freeze the pretrained weights to prevent them from being updated during training
+    # Freeze base weights to lock feature extractor
     base_model.trainable = False
 
-    # Call base model in inference mode (training=False) to ensure BatchNormalization
-    # layer statistics remain frozen and do not drift.
+    # Inference mode execution ensures BatchNormalization layer statistics remain frozen
     x = base_model(inputs, training=False)
 
-    # 3. Add custom classification head layers
-    # Global average pooling reduces the spatial dimensions (e.g., 7x7) to 1x1 vector per feature map
+    # Custom classification head
     x = tf.keras.layers.GlobalAveragePooling2D(name="global_average_pooling")(x)
-
-    # Dropout regularizes the dense layer by randomly setting 20% of inputs to 0
-    x = tf.keras.layers.Dropout(0.2, name="dropout_regularization")(x)
-
-    # Dense layer for feature combination
-    x = tf.keras.layers.Dense(128, activation="relu", name="dense_dense_128")(x)
-
-    # Output layer using Softmax to produce probability distribution across target classes
+    x = tf.keras.layers.Dropout(DROPOUT_RATE, name="dropout_regularization")(x)
+    x = tf.keras.layers.Dense(DENSE_UNITS, activation="relu", name=f"dense_dense_{DENSE_UNITS}")(x)
     outputs = tf.keras.layers.Dense(num_classes, activation="softmax", name="classification_output")(x)
 
-    # 4. Instantiate the Functional API model
     model = tf.keras.Model(inputs=inputs, outputs=outputs, name="Snake_Classifier_MobileNetV2")
-
     return model
 
 
-def train_model(model: tf.keras.Model, 
-                train_ds: tf.data.Dataset, 
-                val_ds: tf.data.Dataset, 
-                epochs: int = EPOCHS) -> tf.keras.callbacks.History:
+def train_model(
+    model: tf.keras.Model, 
+    train_ds: tf.data.Dataset, 
+    val_ds: tf.data.Dataset, 
+    epochs: int = EPOCHS
+) -> tf.keras.callbacks.History:
     """
     Compiles and trains the tf.keras Model.
 
@@ -96,23 +92,20 @@ def train_model(model: tf.keras.Model,
     Returns:
         The History object returned by model.fit().
     """
-    # Create the models/ directory if it doesn't exist
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
-    # 1. Compile model with specified optimizer, loss, and metric
     model.compile(
         optimizer=tf.keras.optimizers.Adam(),
         loss=tf.keras.losses.SparseCategoricalCrossentropy(),
         metrics=["accuracy"]
     )
 
-    # 2. Configure callbacks for robust training
     checkpoint_filepath = os.path.join(CHECKPOINT_DIR, "best_snake_model.keras")
     
     callbacks = [
         tf.keras.callbacks.EarlyStopping(
             monitor="val_loss",
-            patience=3,
+            patience=EARLY_STOPPING_PATIENCE,
             restore_best_weights=True,
             verbose=1
         ),
@@ -124,14 +117,13 @@ def train_model(model: tf.keras.Model,
         ),
         tf.keras.callbacks.ReduceLROnPlateau(
             monitor="val_loss",
-            factor=0.2,
-            patience=2,
-            min_lr=1e-6,
+            factor=REDUCE_LR_FACTOR,
+            patience=REDUCE_LR_PATIENCE,
+            min_lr=REDUCE_LR_MIN,
             verbose=1
         )
     ]
 
-    # 3. Fit the model and display progress
     print(f"Starting training for {epochs} epochs...")
     history = model.fit(
         train_ds,
@@ -144,7 +136,43 @@ def train_model(model: tf.keras.Model,
     return history
 
 
-def generate_report(history: tf.keras.callbacks.History, save_dir: str = CHECKPOINT_DIR):
+def _save_history_json(history_dict: dict, save_dir: str) -> None:
+    """
+    Serializes and saves the training history metrics to a JSON file.
+    """
+    serialized_history = {key: [float(v) for v in val] for key, val in history_dict.items()}
+    history_json_path = os.path.join(save_dir, "training_history.json")
+    with open(history_json_path, "w", encoding="utf-8") as f:
+        json.dump(serialized_history, f, indent=4)
+    print(f"Saved history data to: {history_json_path}")
+
+
+def _plot_metric(
+    epochs_range: range,
+    train_values: list,
+    val_values: list,
+    title: str,
+    ylabel: str,
+    save_path: str,
+    legend_loc: str
+) -> None:
+    """
+    Plots a single metric over training epochs and saves the chart.
+    """
+    plt.figure(figsize=DEFAULT_FIG_SIZE)
+    plt.plot(epochs_range, train_values, label=f"Training {ylabel}", marker='o')
+    plt.plot(epochs_range, val_values, label=f"Validation {ylabel}", marker='s')
+    plt.title(title)
+    plt.xlabel("Epoch")
+    plt.ylabel(ylabel)
+    plt.legend(loc=legend_loc)
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.savefig(save_path, dpi=PLOT_DPI)
+    plt.close()
+    print(f"Saved {ylabel.lower()} chart to: {save_path}")
+
+
+def generate_report(history: tf.keras.callbacks.History, save_dir: str = CHECKPOINT_DIR) -> None:
     """
     Generates, saves, and displays post-training metrics and plots.
 
@@ -155,7 +183,6 @@ def generate_report(history: tf.keras.callbacks.History, save_dir: str = CHECKPO
         history: The History object returned by model.fit().
         save_dir: The directory where reporting artifacts will be stored.
     """
-    # Ensure models directory exists
     os.makedirs(save_dir, exist_ok=True)
 
     # Extract final metrics
@@ -175,46 +202,32 @@ def generate_report(history: tf.keras.callbacks.History, save_dir: str = CHECKPO
     print(f"  Validation Loss:     {val_loss:.4f}")
     print("=" * 50 + "\n")
 
-    # Serialize history metrics to python types for JSON saving
-    serialized_history = {}
-    for key, val in history.history.items():
-        serialized_history[key] = [float(v) for v in val]
-
     # Save metrics JSON file
-    history_json_path = os.path.join(save_dir, "training_history.json")
-    with open(history_json_path, "w", encoding="utf-8") as f:
-        json.dump(serialized_history, f, indent=4)
-    print(f"Saved history data to: {history_json_path}")
+    _save_history_json(history.history, save_dir)
 
     epochs_range = range(1, final_epoch + 1)
 
     # Generate and save accuracy plot
-    plt.figure(figsize=(8, 6))
-    plt.plot(epochs_range, history.history["accuracy"], label="Training Accuracy", marker='o')
-    plt.plot(epochs_range, history.history["val_accuracy"], label="Validation Accuracy", marker='s')
-    plt.title("Model Accuracy Over Epochs")
-    plt.xlabel("Epoch")
-    plt.ylabel("Accuracy")
-    plt.legend(loc="lower right")
-    plt.grid(True, linestyle="--", alpha=0.6)
-    accuracy_plot_path = os.path.join(save_dir, "accuracy.png")
-    plt.savefig(accuracy_plot_path, dpi=150)
-    plt.close()
-    print(f"Saved accuracy chart to: {accuracy_plot_path}")
+    _plot_metric(
+        epochs_range,
+        history.history["accuracy"],
+        history.history["val_accuracy"],
+        title="Model Accuracy Over Epochs",
+        ylabel="Accuracy",
+        save_path=os.path.join(save_dir, "accuracy.png"),
+        legend_loc="lower right"
+    )
 
     # Generate and save loss plot
-    plt.figure(figsize=(8, 6))
-    plt.plot(epochs_range, history.history["loss"], label="Training Loss", marker='o')
-    plt.plot(epochs_range, history.history["val_loss"], label="Validation Loss", marker='s')
-    plt.title("Model Loss Over Epochs")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend(loc="upper right")
-    plt.grid(True, linestyle="--", alpha=0.6)
-    loss_plot_path = os.path.join(save_dir, "loss.png")
-    plt.savefig(loss_plot_path, dpi=150)
-    plt.close()
-    print(f"Saved loss chart to: {loss_plot_path}")
+    _plot_metric(
+        epochs_range,
+        history.history["loss"],
+        history.history["val_loss"],
+        title="Model Loss Over Epochs",
+        ylabel="Loss",
+        save_path=os.path.join(save_dir, "loss.png"),
+        legend_loc="upper right"
+    )
 
 
 def main():

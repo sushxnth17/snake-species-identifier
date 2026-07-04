@@ -1,6 +1,7 @@
 import logging
-from typing import Tuple, List, Any
+from typing import List, Tuple
 import numpy as np
+import tensorflow as tf
 
 from ml.constants import IMAGE_SIZE
 from ml.inference import preprocess_single_image, predict_helper, calculate_confidence
@@ -27,7 +28,7 @@ def preprocess_image(image_bytes: bytes, target_size: Tuple[int, int] = IMAGE_SI
         logger.error(f"Image preprocessing failed: {e}")
         raise ValueError(f"Invalid image format or content: {e}")
 
-def predict(model: Any, preprocessed_img: np.ndarray) -> np.ndarray:
+def predict(model: tf.keras.Model, preprocessed_img: np.ndarray) -> np.ndarray:
     """
     Runs model inference on the preprocessed image batch.
     

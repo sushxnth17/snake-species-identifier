@@ -5,7 +5,7 @@ Handles single-image loading and preprocessing, running prediction, and extracti
 
 import io
 import os
-from typing import Any, Tuple, List
+from typing import Tuple, List, Union
 import numpy as np
 import tensorflow as tf
 from PIL import Image
@@ -13,7 +13,10 @@ from PIL import Image
 from ml.constants import IMAGE_SIZE
 from ml.preprocessing import normalize_image, convert_to_tensor
 
-def preprocess_single_image(image_input: Any, target_size: Tuple[int, int] = IMAGE_SIZE) -> tf.Tensor:
+def preprocess_single_image(
+    image_input: Union[bytes, str, os.PathLike, Image.Image, np.ndarray, tf.Tensor],
+    target_size: Tuple[int, int] = IMAGE_SIZE
+) -> tf.Tensor:
     """
     Loads, resizes, and normalizes a single image for model inference.
     
@@ -63,13 +66,13 @@ def preprocess_single_image(image_input: Any, target_size: Tuple[int, int] = IMA
 
     return preprocessed_img
 
-def predict_helper(model: Any, preprocessed_img: Any) -> np.ndarray:
+def predict_helper(model: tf.keras.Model, preprocessed_img: tf.Tensor) -> np.ndarray:
     """
     Runs model inference on a preprocessed image batch tensor.
 
     Args:
         model: Loaded tf.keras Model.
-        preprocessed_img: Preprocessed input tensor or array.
+        preprocessed_img: Preprocessed input tensor.
         
     Returns:
         A NumPy array containing predicted class probabilities.
