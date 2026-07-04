@@ -79,12 +79,13 @@ snake/
 ├── dataset/                  # Local training dataset (Git-ignored)
 │   ├── cobra/                # Subfolder containing Cobra training images
 │   └── krait/                # Subfolder containing Krait training images
-├── frontend/                 # Client UI Application
-├── ml/                       # Machine Learning Codebase (Future location for training scripts)
+├── frontend/                 # Client UI Application (Empty)
+├── models/                   # Saved trained models and evaluation artifacts (Git-ignored)
+│   ├── snake_classifier.keras # Final trained weights file
+│   └── class_names.json      # Discovered classes mapping JSON
 ├── train.py                  # Script to train and compile the model
 ├── test.py                   # Script to run local inference tests
 ├── verify_environment.py     # Local environment diagnostic script
-├── snake_model.h5            # Saved trained model binary (Git-ignored)
 ├── requirements.txt          # Python dependency list
 ├── .gitignore                # Git exclude list
 └── README.md                 # Project documentation
@@ -106,7 +107,7 @@ Train the MobileNetV2 classifier on the local dataset:
 ```bash
 python train.py
 ```
-This saves the trained model weights to `snake_model.h5` in the root folder.
+This saves the trained model weights to `models/snake_classifier.keras` (with the best epoch saved to `models/best_snake_model.keras`).
 
 ### Step 3: Run the Backend
 Start the FastAPI server:
