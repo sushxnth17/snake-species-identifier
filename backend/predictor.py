@@ -1,13 +1,14 @@
-import io
 import logging
+from typing import List, Tuple
 import numpy as np
-from PIL import Image
-from typing import Tuple, List, Any
 import tensorflow as tf
+
+from ml.constants import IMAGE_SIZE
+from ml.inference import preprocess_single_image, predict_helper, calculate_confidence
 
 logger = logging.getLogger(__name__)
 
-def preprocess_image(image_bytes: bytes, target_size: Tuple[int, int] = (224, 224)) -> np.ndarray:
+def preprocess_image(image_bytes: bytes, target_size: Tuple[int, int] = IMAGE_SIZE) -> np.ndarray:
     """
     Decodes image bytes, resizes it to the target dimensions, and prepares
     the batch tensor for the neural network using MobileNetV2 preprocessing.
@@ -21,24 +22,13 @@ def preprocess_image(image_bytes: bytes, target_size: Tuple[int, int] = (224, 22
     """
     logger.info("Preprocessing image...")
     try:
-        image = Image.open(io.BytesIO(image_bytes))
-        # Ensure image is RGB
-        if image.mode != "RGB":
-            image = image.convert("RGB")
-        # Resize image using Bilinear interpolation
-        image = image.resize(target_size, Image.Resampling.BILINEAR)
-        # Convert to array
-        img_array = tf.keras.utils.img_to_array(image)
-        # Expand dimensions to batch size 1 (1, H, W, C)
-        img_batch = np.expand_dims(img_array, axis=0)
-        # Apply MobileNetV2 preprocessing
-        preprocessed_img = tf.keras.applications.mobilenet_v2.preprocess_input(img_batch)
-        return preprocessed_img
+        preprocessed_tensor = preprocess_single_image(image_bytes, target_size=target_size)
+        return preprocessed_tensor.numpy()
     except Exception as e:
         logger.error(f"Image preprocessing failed: {e}")
         raise ValueError(f"Invalid image format or content: {e}")
 
-def predict(model: Any, preprocessed_img: np.ndarray) -> np.ndarray:
+def predict(model: tf.keras.Model, preprocessed_img: np.ndarray) -> np.ndarray:
     """
     Runs model inference on the preprocessed image batch.
     
@@ -50,13 +40,11 @@ def predict(model: Any, preprocessed_img: np.ndarray) -> np.ndarray:
         A NumPy array containing class prediction probabilities.
     """
     logger.info("Running model prediction...")
-    if model is None:
-        logger.error("No model is loaded. Inference cannot proceed.")
-        raise RuntimeError("Inference failed because the classification model is not loaded.")
-        
     try:
-        predictions = model.predict(preprocessed_img, verbose=0)
-        return predictions
+        return predict_helper(model, preprocessed_img)
+    except RuntimeError as e:
+        logger.error(f"Model prediction failed: {e}")
+        raise
     except Exception as e:
         logger.error(f"Model prediction failed: {e}")
         raise RuntimeError(f"Prediction inference failed: {e}")
@@ -73,16 +61,8 @@ def format_prediction_results(predictions: np.ndarray, class_names: List[str]) -
         A tuple of (predicted_species_name, confidence_score).
     """
     logger.info("Formatting prediction results...")
-    if len(predictions) == 0:
-        raise ValueError("Empty predictions array.")
-        
-    probs = predictions[0]
-    predicted_idx = int(np.argmax(probs))
-    
-    if predicted_idx >= len(class_names):
-        raise ValueError(f"Predicted index {predicted_idx} is out of bounds for class names.")
-        
-    predicted_species = class_names[predicted_idx]
-    confidence = float(probs[predicted_idx])
-    
-    return predicted_species, confidence
+    try:
+        return calculate_confidence(predictions, class_names)
+    except Exception as e:
+        logger.error(f"Formatting prediction results failed: {e}")
+        raise

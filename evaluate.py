@@ -5,30 +5,86 @@ computes classification metrics (Accuracy, Precision, Recall, F1), generates a c
 and saves the reports.
 """
 
+import json
 import os
 import sys
-import json
-import numpy as np
-import tensorflow as tf
+from typing import List, Tuple
 
 # Set non-interactive backend for matplotlib
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
+import numpy as np
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, ConfusionMatrixDisplay
+import tensorflow as tf
 
-# Import load_datasets from train.py to reuse dataset loaders
-from train import load_datasets, CHECKPOINT_DIR
+from ml.constants import CM_FIG_SIZE, MODEL_NAME, PLOT_DPI
+from ml.dataset import load_and_preprocess_dataset
+from train import CHECKPOINT_DIR
 
 # File Path Constants
-MODEL_PATH = os.path.join(CHECKPOINT_DIR, "snake_classifier.keras")
+MODEL_PATH = os.path.join(CHECKPOINT_DIR, f"{MODEL_NAME}.keras")
 CLASS_NAMES_PATH = os.path.join(CHECKPOINT_DIR, "class_names.json")
 
 
-def evaluate_model(model_path: str = MODEL_PATH, 
-                   class_names_path: str = CLASS_NAMES_PATH, 
-                   save_dir: str = CHECKPOINT_DIR) -> dict:
+def _gather_predictions_and_labels(
+    model: tf.keras.Model,
+    dataset: tf.data.Dataset
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Runs model prediction on the dataset to collect predictions and ground truth labels.
+    """
+    all_y_true = []
+    all_y_pred = []
+
+    for images, labels in dataset:
+        preds = model.predict(images, verbose=0)
+        pred_labels = np.argmax(preds, axis=1)
+
+        all_y_true.extend(labels.numpy())
+        all_y_pred.extend(pred_labels)
+
+    return np.array(all_y_true), np.array(all_y_pred)
+
+
+def _save_evaluation_report(metrics_report: dict, save_dir: str) -> None:
+    """
+    Saves the computed evaluation metrics dictionary to a JSON file.
+    """
+    report_path = os.path.join(save_dir, "evaluation_report.json")
+    with open(report_path, "w", encoding="utf-8") as f:
+        json.dump(metrics_report, f, indent=4)
+    print(f"Saved evaluation report to: {report_path}")
+
+
+def _plot_confusion_matrix(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    class_names: List[str],
+    save_dir: str
+) -> None:
+    """
+    Generates and saves the confusion matrix plot.
+    """
+    cm = confusion_matrix(y_true, y_pred)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
+    
+    fig, ax = plt.subplots(figsize=CM_FIG_SIZE)
+    disp.plot(cmap=plt.cm.Blues, ax=ax, colorbar=False)
+    plt.title("Confusion Matrix")
+    plt.tight_layout()
+    
+    cm_plot_path = os.path.join(save_dir, "confusion_matrix.png")
+    plt.savefig(cm_plot_path, dpi=PLOT_DPI)
+    plt.close()
+    print(f"Saved confusion matrix chart to: {cm_plot_path}")
+
+
+def evaluate_model(
+    model_path: str = MODEL_PATH, 
+    class_names_path: str = CLASS_NAMES_PATH, 
+    save_dir: str = CHECKPOINT_DIR
+) -> dict:
     """
     Evaluates the model on the validation dataset and saves metrics and confusion matrix.
 
@@ -45,13 +101,11 @@ def evaluate_model(model_path: str = MODEL_PATH,
     if not os.path.exists(class_names_path):
         raise FileNotFoundError(f"Class names metadata not found at: {class_names_path}")
 
-    # Ensure models directory exists
     os.makedirs(save_dir, exist_ok=True)
 
     # 1. Load the validation dataset using the same configuration as training
     print("Loading validation dataset...")
-    # load_datasets returns train_ds, val_ds, class_names
-    _, val_ds, class_names = load_datasets()
+    _, val_ds, class_names = load_and_preprocess_dataset(data_dir="dataset")
 
     # 2. Load the trained model
     print(f"Loading trained model from {model_path}...")
@@ -62,18 +116,7 @@ def evaluate_model(model_path: str = MODEL_PATH,
 
     # 3. Gather ground truth and model predictions
     print("Gathering predictions and labels...")
-    all_y_true = []
-    all_y_pred = []
-
-    for images, labels in val_ds:
-        preds = model.predict(images, verbose=0)
-        pred_labels = np.argmax(preds, axis=1)
-
-        all_y_true.extend(labels.numpy())
-        all_y_pred.extend(pred_labels)
-
-    y_true = np.array(all_y_true)
-    y_pred = np.array(all_y_pred)
+    y_true, y_pred = _gather_predictions_and_labels(model, val_ds)
 
     if len(y_true) == 0:
         raise ValueError("The validation dataset is empty. Cannot perform evaluation.")
@@ -105,25 +148,10 @@ def evaluate_model(model_path: str = MODEL_PATH,
         "f1_macro": float(f1),
         "total_samples": int(len(y_true))
     }
-
-    report_path = os.path.join(save_dir, "evaluation_report.json")
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(metrics_report, f, indent=4)
-    print(f"Saved evaluation report to: {report_path}")
+    _save_evaluation_report(metrics_report, save_dir)
 
     # 7. Generate and save confusion matrix plot
-    cm = confusion_matrix(y_true, y_pred)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
-    
-    fig, ax = plt.subplots(figsize=(6, 6))
-    disp.plot(cmap=plt.cm.Blues, ax=ax, colorbar=False)
-    plt.title("Confusion Matrix")
-    plt.tight_layout()
-    
-    cm_plot_path = os.path.join(save_dir, "confusion_matrix.png")
-    plt.savefig(cm_plot_path, dpi=150)
-    plt.close()
-    print(f"Saved confusion matrix chart to: {cm_plot_path}")
+    _plot_confusion_matrix(y_true, y_pred, class_names, save_dir)
 
     return metrics_report
 
