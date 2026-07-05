@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,21 +8,21 @@ import logging
 import uuid
 
 import os
+import tensorflow as tf
+from typing import List
 from datetime import datetime
-from backend.config import settings
+from backend.config import settings, Settings
 from backend.schemas import PredictionResponse, ErrorResponse, ModelInfoResponse, MetricsResponse, HealthResponse
 from backend.logging_config import setup_structured_logging, request_id_var
 from backend import model_loader
 from backend import predictor
 from backend.metadata import get_snake_metadata
-from backend.metrics import DiagnosticsMetrics
+from backend.metrics import DiagnosticsMetrics, metrics_tracker
+from backend.dependencies import get_settings, get_logger, get_metrics_tracker, get_model, get_class_names
 
 # Setup Logging
 setup_structured_logging(settings.logging_level)
 logger = logging.getLogger(__name__)
-
-# Initialize metrics tracker
-metrics_tracker = DiagnosticsMetrics()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -210,7 +210,12 @@ async def general_exception_handler(request: Request, exc: Exception):
         }
     }
 )
-def health_check(request: Request):
+def health_check(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    logger: logging.Logger = Depends(get_logger),
+    metrics: DiagnosticsMetrics = Depends(get_metrics_tracker)
+):
     """
     Health check endpoint to verify backend status, model readiness, uptime, and version.
     """
@@ -223,7 +228,7 @@ def health_check(request: Request):
     )
     model_loaded = model_loader._model is not None
     model_status = "loaded" if model_loaded else "not_loaded"
-    uptime_sec = round(metrics_tracker.uptime, 2)
+    uptime_sec = round(metrics.uptime, 2)
     timestamp_str = datetime.utcnow().isoformat() + "Z"
     
     return {
@@ -244,7 +249,12 @@ def health_check(request: Request):
     description="Returns metadata about the active machine learning model, including model format, name, supported classes, input size, and whether the weights are loaded.",
     response_description="A structured object detailing model attributes and readiness."
 )
-def get_model_info(request: Request):
+def get_model_info(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    logger: logging.Logger = Depends(get_logger),
+    class_names: List[str] = Depends(get_class_names)
+):
     """
     Get detailed information about the configured machine learning model.
     """
@@ -256,11 +266,6 @@ def get_model_info(request: Request):
         }
     )
     
-    try:
-        supported_classes = model_loader.get_class_names()
-    except Exception:
-        supported_classes = []
-        
     model_loaded = model_loader._model is not None
     model_filename = os.path.basename(settings.model_path)
     
@@ -270,7 +275,7 @@ def get_model_info(request: Request):
     return {
         "model_name": model_filename,
         "model_format": model_format,
-        "supported_classes": supported_classes,
+        "supported_classes": class_names,
         "image_size": settings.image_size,
         "confidence_threshold": settings.confidence_threshold,
         "model_loaded_status": model_loaded
@@ -283,7 +288,11 @@ def get_model_info(request: Request):
     description="Returns metrics tracking overall request counts, successful predictions, failed predictions, uptime, and average inference latency.",
     response_description="A JSON object holding latency and outcome metrics."
 )
-def get_metrics(request: Request):
+def get_metrics(
+    request: Request,
+    logger: logging.Logger = Depends(get_logger),
+    metrics: DiagnosticsMetrics = Depends(get_metrics_tracker)
+):
     """
     Retrieve application diagnostics and prediction performance counters.
     """
@@ -295,11 +304,11 @@ def get_metrics(request: Request):
         }
     )
     return {
-        "total_predictions": metrics_tracker.total_predictions,
-        "average_inference_time_ms": metrics_tracker.average_inference_time,
-        "uptime_seconds": round(metrics_tracker.uptime, 2),
-        "successful_predictions": metrics_tracker.successful_predictions,
-        "failed_predictions": metrics_tracker.failed_predictions
+        "total_predictions": metrics.total_predictions,
+        "average_inference_time_ms": metrics.average_inference_time,
+        "uptime_seconds": round(metrics.uptime, 2),
+        "successful_predictions": metrics.successful_predictions,
+        "failed_predictions": metrics.failed_predictions
     }
 
 @app.post(
@@ -345,7 +354,14 @@ def get_metrics(request: Request):
         }
     }
 )
-async def predict_species(file: UploadFile = File(..., description="The binary image of the snake to classify (JPEG, PNG, or WebP format).")):
+async def predict_species(
+    file: UploadFile = File(..., description="The binary image of the snake to classify (JPEG, PNG, or WebP format)."),
+    settings: Settings = Depends(get_settings),
+    logger: logging.Logger = Depends(get_logger),
+    metrics: DiagnosticsMetrics = Depends(get_metrics_tracker),
+    model: tf.keras.Model = Depends(get_model),
+    class_names: List[str] = Depends(get_class_names)
+):
     """
     Accepts an uploaded image of a snake and predicts its species.
     Validates file existence, MIME type, and size limits before running inference.
@@ -392,40 +408,14 @@ async def predict_species(file: UploadFile = File(..., description="The binary i
         preprocess_duration = time.perf_counter() - preprocess_start
         
         # 5. Run prediction
-        try:
-            model = model_loader.get_model()
-        except RuntimeError as e:
-            logger.warning(
-                "Model was not loaded on startup. Attempting lazy load...",
-                extra={"event": "lazy_load_attempt"}
-            )
-            try:
-                model = model_loader.load_model()
-            except Exception as lazy_err:
-                logger.error(
-                    f"Lazy loading model failed: {lazy_err}",
-                    exc_info=lazy_err,
-                    extra={"event": "lazy_load_failed"}
-                )
-                raise HTTPException(
-                    status_code=503,
-                    detail="Model is not available. Please try again later."
-                )
-                
         inference_start = time.perf_counter()
         raw_predictions = predictor.predict(model, preprocessed)
         inference_duration = time.perf_counter() - inference_start
         
-        # 6. Read class names
-        try:
-            class_names = model_loader.get_class_names()
-        except Exception:
-            class_names = model_loader.load_class_names()
-            
-        # 7. Extract predicted class and confidence
+        # 6. Extract predicted class and confidence
         predicted_species, confidence = predictor.format_prediction_results(raw_predictions, class_names)
         
-        # 8. Retrieve Safety and Taxonomic Metadata
+        # 7. Retrieve Safety and Taxonomic Metadata
         metadata_start = time.perf_counter()
         meta_dict = get_snake_metadata(predicted_species)
         metadata_duration = time.perf_counter() - metadata_start
@@ -439,7 +429,7 @@ async def predict_species(file: UploadFile = File(..., description="The binary i
         total_request_duration_ms = round(total_duration * 1000, 2)
         
         # Record successful prediction metrics
-        metrics_tracker.record_prediction(inference_time_ms, success=True)
+        metrics.record_prediction(inference_time_ms, success=True)
         
         # Log structured prediction request details
         logger.info(
@@ -464,5 +454,5 @@ async def predict_species(file: UploadFile = File(..., description="The binary i
             inference_time_ms=inference_time_ms
         )
     except Exception as e:
-        metrics_tracker.record_prediction(0.0, success=False)
+        metrics.record_prediction(0.0, success=False)
         raise e

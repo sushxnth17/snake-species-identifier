@@ -8,6 +8,15 @@ from backend.schemas import PredictionResponse
 
 client = TestClient(app)
 
+@pytest.fixture(autouse=True)
+def override_test_dependencies():
+    from backend.dependencies import get_model, get_class_names
+    mock_model = MagicMock()
+    app.dependency_overrides[get_model] = lambda: mock_model
+    app.dependency_overrides[get_class_names] = lambda: ["cobra", "krait"]
+    yield
+    app.dependency_overrides.clear()
+
 def test_health_check_endpoint():
     """
     Test that the health check endpoint returns 200 and indicates model load status.
@@ -108,10 +117,15 @@ def test_prediction_missing_model():
     Test when the model loader has no model and lazy load fails.
     It should return HTTP 503.
     """
-    with patch("backend.model_loader.get_model", side_effect=RuntimeError("Model not loaded")), \
-         patch("backend.model_loader.load_model", side_effect=RuntimeError("Weights file missing")), \
-         patch("backend.predictor.preprocess_image", return_value=np.zeros((1, 224, 224, 3))):
+    from backend.dependencies import get_model
+    from fastapi import HTTPException
+    
+    def mock_get_model_fail():
+        raise HTTPException(status_code=503, detail="Model is not available. Please try again later.")
         
+    app.dependency_overrides[get_model] = mock_get_model_fail
+    
+    with patch("backend.predictor.preprocess_image", return_value=np.zeros((1, 224, 224, 3))):
         files = {"file": ("test.png", b"dummy image content", "image/png")}
         response = client.post("/predict", files=files)
         

@@ -42,3 +42,6 @@ class DiagnosticsMetrics:
             if self.successful_predictions == 0:
                 return 0.0
             return round(self.total_inference_time_ms / self.successful_predictions, 2)
+
+# Global metrics tracker instance
+metrics_tracker = DiagnosticsMetrics()
