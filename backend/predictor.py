@@ -3,12 +3,12 @@ from typing import List, Tuple
 import numpy as np
 import tensorflow as tf
 
-from ml.constants import IMAGE_SIZE
+from backend.config import settings
 from ml.inference import preprocess_single_image, predict_helper, calculate_confidence
 
 logger = logging.getLogger(__name__)
 
-def preprocess_image(image_bytes: bytes, target_size: Tuple[int, int] = IMAGE_SIZE) -> np.ndarray:
+def preprocess_image(image_bytes: bytes, target_size: Tuple[int, int] = None) -> np.ndarray:
     """
     Decodes image bytes, resizes it to the target dimensions, and prepares
     the batch tensor for the neural network using MobileNetV2 preprocessing.
@@ -21,6 +21,8 @@ def preprocess_image(image_bytes: bytes, target_size: Tuple[int, int] = IMAGE_SI
         A preprocessed NumPy array representing the image batch, scaled for MobileNetV2.
     """
     logger.info("Preprocessing image...")
+    if target_size is None:
+        target_size = settings.image_size
     try:
         preprocessed_tensor = preprocess_single_image(image_bytes, target_size=target_size)
         return preprocessed_tensor.numpy()
