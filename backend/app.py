@@ -5,37 +5,52 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import time
 import logging
+import uuid
 
 from backend.config import settings
 from backend.schemas import PredictionResponse, ErrorResponse
-from backend.utils import setup_logging
+from backend.logging_config import setup_structured_logging, request_id_var
 from backend import model_loader
 from backend import predictor
 from backend.metadata import get_snake_metadata
 
 # Setup Logging
-log_level = getattr(logging, settings.logging_level.upper(), logging.INFO)
-setup_logging(level=log_level)
+setup_structured_logging(settings.logging_level)
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Load the model and class names exactly once.
-    # If the model does not exist or fails to load, log it and allow startup
-    # so routes can still be served (especially for frontend/API debugging).
-    logger.info("Initializing application resources during startup lifespan...")
+    logger.info("Initializing application resources during startup lifespan...", extra={"event": "startup_init"})
+    start_time = time.perf_counter()
     try:
         model_loader.load_model()
+        logger.info("Model loaded successfully.", extra={"event": "model_loaded", "model_path": settings.model_path})
+        
         model_loader.load_class_names()
-        logger.info("Initialization completed successfully.")
+        logger.info("Class names loaded successfully.", extra={"event": "class_names_loaded", "class_names_path": settings.class_names_path})
+        
+        startup_duration = time.perf_counter() - start_time
+        logger.info(
+            "Backend started successfully.",
+            extra={
+                "event": "backend_started",
+                "startup_duration_seconds": startup_duration
+            }
+        )
     except Exception as e:
+        startup_duration = time.perf_counter() - start_time
         logger.error(
-            f"Startup failed to initialize TensorFlow model. "
-            f"API endpoints will fall back to mock predictions. Details: {e}"
+            f"Startup failed to initialize TensorFlow model. API endpoints will fall back to mock predictions. Details: {e}",
+            exc_info=e,
+            extra={
+                "event": "startup_failed",
+                "startup_duration_seconds": startup_duration
+            }
         )
     yield
-    # Shutdown logic (none needed for now)
-    logger.info("Cleaning up application resources during shutdown lifespan...")
+    # Shutdown logic
+    logger.info("Cleaning up application resources during shutdown lifespan...", extra={"event": "shutdown_cleanup"})
 
 app = FastAPI(
     title=settings.api_title,
@@ -54,11 +69,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Request ID & Logging Middleware
+@app.middleware("http")
+async def add_request_id_and_log(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    token = request_id_var.set(request_id)
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        request_id_var.reset(token)
+
+
 # --- Global Exception Handlers ---
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    logger.error(f"HTTPException: status_code={exc.status_code}, detail={exc.detail}")
+    logger.error(
+        f"HTTPException: status_code={exc.status_code}, detail={exc.detail}",
+        exc_info=exc,
+        extra={
+            "event": "error",
+            "endpoint": request.url.path,
+            "status_code": exc.status_code
+        }
+    )
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": {"code": exc.status_code, "message": exc.detail}}
@@ -67,8 +103,16 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = exc.errors()
-    logger.error(f"RequestValidationError: {errors}")
     error_msg = "; ".join([f"{'.'.join(str(loc) for loc in err['loc'])}: {err['msg']}" for err in errors])
+    logger.error(
+        f"RequestValidationError: {error_msg}",
+        exc_info=exc,
+        extra={
+            "event": "error",
+            "endpoint": request.url.path,
+            "validation_errors": errors
+        }
+    )
     return JSONResponse(
         status_code=422,
         content={"error": {"code": 422, "message": f"Validation Error: {error_msg}"}}
@@ -76,7 +120,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError):
-    logger.error(f"ValueError: {exc}", exc_info=True)
+    logger.error(
+        f"ValueError: {exc}",
+        exc_info=exc,
+        extra={
+            "event": "error",
+            "endpoint": request.url.path
+        }
+    )
     return JSONResponse(
         status_code=400,
         content={"error": {"code": 400, "message": f"Bad Request: {str(exc)}"}}
@@ -84,7 +135,14 @@ async def value_error_handler(request: Request, exc: ValueError):
 
 @app.exception_handler(FileNotFoundError)
 async def file_not_found_handler(request: Request, exc: FileNotFoundError):
-    logger.error(f"FileNotFoundError: {exc}", exc_info=True)
+    logger.error(
+        f"FileNotFoundError: {exc}",
+        exc_info=exc,
+        extra={
+            "event": "error",
+            "endpoint": request.url.path
+        }
+    )
     return JSONResponse(
         status_code=503,
         content={"error": {"code": 503, "message": f"Service Unavailable: Required resource missing ({str(exc)})"}}
@@ -92,7 +150,14 @@ async def file_not_found_handler(request: Request, exc: FileNotFoundError):
 
 @app.exception_handler(RuntimeError)
 async def runtime_error_handler(request: Request, exc: RuntimeError):
-    logger.error(f"RuntimeError: {exc}", exc_info=True)
+    logger.error(
+        f"RuntimeError: {exc}",
+        exc_info=exc,
+        extra={
+            "event": "error",
+            "endpoint": request.url.path
+        }
+    )
     return JSONResponse(
         status_code=500,
         content={"error": {"code": 500, "message": f"Internal Server Error: {str(exc)}"}}
@@ -100,7 +165,14 @@ async def runtime_error_handler(request: Request, exc: RuntimeError):
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    logger.exception(f"Unhandled exception: {exc}")
+    logger.error(
+        f"Unhandled exception: {exc}",
+        exc_info=exc,
+        extra={
+            "event": "error",
+            "endpoint": request.url.path
+        }
+    )
     return JSONResponse(
         status_code=500,
         content={"error": {"code": 500, "message": "An unexpected error occurred on the server."}}
@@ -126,10 +198,17 @@ async def general_exception_handler(request: Request, exc: Exception):
         }
     }
 )
-def health_check():
+def health_check(request: Request):
     """
     Health check endpoint to verify backend status and model readiness.
     """
+    logger.info(
+        "Health endpoint accessed",
+        extra={
+            "event": "health_check",
+            "endpoint": request.url.path
+        }
+    )
     model_loaded = model_loader._model is not None
     return {
         "status": "healthy",
@@ -184,9 +263,14 @@ async def predict_species(file: UploadFile = File(..., description="The binary i
     Accepts an uploaded image of a snake and predicts its species.
     Validates file existence, MIME type, and size limits before running inference.
     """
+    start_time = time.perf_counter()
+    
     # 1. Validate MIME type first (quick check on headers)
     if file.content_type not in settings.allowed_mime_types:
-        logger.warning(f"Rejected upload with unsupported MIME type: {file.content_type}")
+        logger.warning(
+            f"Rejected upload with unsupported MIME type: {file.content_type}",
+            extra={"event": "validation_failed", "detail": "unsupported_mime_type"}
+        )
         raise HTTPException(
             status_code=415,
             detail=f"Unsupported media type: '{file.content_type}'. Allowed types: {', '.join(settings.allowed_mime_types)}"
@@ -197,36 +281,53 @@ async def predict_species(file: UploadFile = File(..., description="The binary i
     
     # 2. Validate file existence
     if not image_bytes or len(image_bytes) == 0:
-        logger.warning("Rejected upload with empty file content.")
+        logger.warning(
+            "Rejected upload with empty file content.",
+            extra={"event": "validation_failed", "detail": "empty_file"}
+        )
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
         
     # 3. Validate maximum upload size
     if len(image_bytes) > settings.max_upload_size:
         max_mb = settings.max_upload_size / (1024 * 1024)
-        logger.warning(f"Rejected upload exceeding maximum size limit: {len(image_bytes)} bytes")
+        logger.warning(
+            f"Rejected upload exceeding maximum size limit: {len(image_bytes)} bytes",
+            extra={"event": "validation_failed", "detail": "file_too_large"}
+        )
         raise HTTPException(
             status_code=413,
             detail=f"File size exceeds the maximum limit of {max_mb:.1f}MB."
         )
         
     # 4. Preprocess image
+    preprocess_start = time.perf_counter()
     preprocessed = predictor.preprocess_image(image_bytes)
+    preprocess_duration = time.perf_counter() - preprocess_start
     
     # 5. Run prediction
     try:
         model = model_loader.get_model()
     except RuntimeError as e:
-        logger.warning("Model was not loaded on startup. Attempting lazy load...")
+        logger.warning(
+            "Model was not loaded on startup. Attempting lazy load...",
+            extra={"event": "lazy_load_attempt"}
+        )
         try:
             model = model_loader.load_model()
         except Exception as lazy_err:
-            logger.error(f"Lazy loading model failed: {lazy_err}")
+            logger.error(
+                f"Lazy loading model failed: {lazy_err}",
+                exc_info=lazy_err,
+                extra={"event": "lazy_load_failed"}
+            )
             raise HTTPException(
                 status_code=503,
                 detail="Model is not available. Please try again later."
             )
             
+    inference_start = time.perf_counter()
     raw_predictions = predictor.predict(model, preprocessed)
+    inference_duration = time.perf_counter() - inference_start
     
     # 6. Read class names
     try:
@@ -239,6 +340,23 @@ async def predict_species(file: UploadFile = File(..., description="The binary i
     
     # 8. Retrieve Safety and Taxonomic Metadata
     meta_dict = get_snake_metadata(predicted_species)
+    
+    total_duration = time.perf_counter() - start_time
+    
+    # Log structured prediction request details
+    logger.info(
+        f"Prediction completed for {file.filename}: {predicted_species} ({confidence:.4f})",
+        extra={
+            "event": "prediction_request",
+            "uploaded_filename": file.filename,
+            "file_size_bytes": len(image_bytes),
+            "prediction": predicted_species,
+            "confidence": confidence,
+            "preprocessing_time_seconds": preprocess_duration,
+            "inference_time_seconds": inference_duration,
+            "total_request_duration_seconds": total_duration
+        }
+    )
     
     return PredictionResponse(
         species=predicted_species,

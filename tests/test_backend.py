@@ -181,3 +181,60 @@ def test_config_validation_and_parsing():
     with patch.dict(os.environ, {"IMAGE_SIZE": "224"}):
         with pytest.raises(ValidationError):
             load_settings()
+
+def test_structured_json_logging():
+    """
+    Test that StructuredJSONFormatter formats logs as JSON and includes expected fields.
+    """
+    import logging
+    import json
+    from backend.logging_config import StructuredJSONFormatter, request_id_var
+    
+    formatter = StructuredJSONFormatter()
+    
+    # 1. Test standard log record
+    record = logging.LogRecord(
+        name="test_logger",
+        level=logging.INFO,
+        pathname="test_path.py",
+        lineno=10,
+        msg="Hello World",
+        args=(),
+        exc_info=None
+    )
+    
+    formatted_msg = formatter.format(record)
+    log_data = json.loads(formatted_msg)
+    
+    assert "timestamp" in log_data
+    assert log_data["level"] == "INFO"
+    assert log_data["logger"] == "test_logger"
+    assert log_data["message"] == "Hello World"
+    assert "request_id" not in log_data
+
+    # 2. Test log record with request ID context variable
+    token = request_id_var.set("test-request-id-12345")
+    try:
+        formatted_msg_with_id = formatter.format(record)
+        log_data_with_id = json.loads(formatted_msg_with_id)
+        assert log_data_with_id["request_id"] == "test-request-id-12345"
+    finally:
+        request_id_var.reset(token)
+
+    # 3. Test log record with extra attributes
+    record_with_extra = logging.LogRecord(
+        name="test_logger",
+        level=logging.INFO,
+        pathname="test_path.py",
+        lineno=10,
+        msg="Test Extra",
+        args=(),
+        exc_info=None
+    )
+    record_with_extra.uploaded_filename = "test_image.png"
+    record_with_extra.file_size_bytes = 1024
+    
+    formatted_extra = formatter.format(record_with_extra)
+    log_data_extra = json.loads(formatted_extra)
+    assert log_data_extra["uploaded_filename"] == "test_image.png"
+    assert log_data_extra["file_size_bytes"] == 1024

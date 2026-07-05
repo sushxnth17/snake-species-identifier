@@ -114,8 +114,8 @@ def load_settings() -> Settings:
         return Settings(**settings_dict)
     except ValidationError as e:
         import sys
-        print("CRITICAL: Backend configuration validation failed!", file=sys.stderr)
-        print(e, file=sys.stderr)
+        sys.stderr.write("CRITICAL: Backend configuration validation failed!\n")
+        sys.stderr.write(str(e) + "\n")
         raise e
 
 
