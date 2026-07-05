@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Depends
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -404,12 +405,12 @@ async def predict_species(
             
         # 4. Preprocess image
         preprocess_start = time.perf_counter()
-        preprocessed = predictor.preprocess_image(image_bytes)
+        preprocessed = await run_in_threadpool(predictor.preprocess_image, image_bytes)
         preprocess_duration = time.perf_counter() - preprocess_start
         
         # 5. Run prediction
         inference_start = time.perf_counter()
-        raw_predictions = predictor.predict(model, preprocessed)
+        raw_predictions = await run_in_threadpool(predictor.predict, model, preprocessed)
         inference_duration = time.perf_counter() - inference_start
         
         # 6. Extract predicted class and confidence
