@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 import time
 import logging
 
-from backend.config import APP_TITLE, APP_DESCRIPTION, APP_VERSION, ALLOWED_ORIGINS, ALLOWED_MIME_TYPES, MAX_UPLOAD_SIZE
+from backend.config import settings
 from backend.schemas import PredictionResponse, ErrorResponse
 from backend.utils import setup_logging
 from backend import model_loader
@@ -14,7 +14,8 @@ from backend import predictor
 from backend.metadata import get_snake_metadata
 
 # Setup Logging
-setup_logging()
+log_level = getattr(logging, settings.logging_level.upper(), logging.INFO)
+setup_logging(level=log_level)
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
@@ -37,16 +38,17 @@ async def lifespan(app: FastAPI):
     logger.info("Cleaning up application resources during shutdown lifespan...")
 
 app = FastAPI(
-    title=APP_TITLE,
-    description=APP_DESCRIPTION,
-    version=APP_VERSION,
+    title=settings.api_title,
+    description=settings.app_description,
+    version=settings.api_version,
+    debug=settings.debug,
     lifespan=lifespan
 )
 
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -142,8 +144,8 @@ def health_check():
         "Uploads a picture of a snake and runs deep-learning classification.\n\n"
         "**Validations Executed**:\n"
         "- **File Existence**: Verifies the payload is not empty.\n"
-        "- **MIME Type**: Restricts uploads to standard images (`image/jpeg`, `image/png`, `image/webp`).\n"
-        "- **Max File Size**: Caps uploads at 5MB.\n\n"
+        f"- **MIME Type**: Restricts uploads to standard images ({', '.join(settings.allowed_mime_types)}).\n"
+        f"- **Max File Size**: Caps uploads at {settings.max_upload_size / (1024 * 1024):.1f}MB.\n\n"
         "**Inference Pipeline**:\n"
         "1. Decodes and scales input using MobileNetV2 preprocessing parameters.\n"
         "2. Performs prediction on the loaded neural network model.\n"
@@ -161,7 +163,7 @@ def health_check():
         },
         413: {
             "model": ErrorResponse,
-            "description": "Payload Too Large. Uploaded image file size exceeds the 5MB limit."
+            "description": f"Payload Too Large. Uploaded image file size exceeds the {settings.max_upload_size / (1024 * 1024):.1f}MB limit."
         },
         415: {
             "model": ErrorResponse,
@@ -183,11 +185,11 @@ async def predict_species(file: UploadFile = File(..., description="The binary i
     Validates file existence, MIME type, and size limits before running inference.
     """
     # 1. Validate MIME type first (quick check on headers)
-    if file.content_type not in ALLOWED_MIME_TYPES:
+    if file.content_type not in settings.allowed_mime_types:
         logger.warning(f"Rejected upload with unsupported MIME type: {file.content_type}")
         raise HTTPException(
             status_code=415,
-            detail=f"Unsupported media type: '{file.content_type}'. Allowed types: {', '.join(ALLOWED_MIME_TYPES)}"
+            detail=f"Unsupported media type: '{file.content_type}'. Allowed types: {', '.join(settings.allowed_mime_types)}"
         )
         
     # Read file content into memory
@@ -199,8 +201,8 @@ async def predict_species(file: UploadFile = File(..., description="The binary i
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
         
     # 3. Validate maximum upload size
-    if len(image_bytes) > MAX_UPLOAD_SIZE:
-        max_mb = MAX_UPLOAD_SIZE / (1024 * 1024)
+    if len(image_bytes) > settings.max_upload_size:
+        max_mb = settings.max_upload_size / (1024 * 1024)
         logger.warning(f"Rejected upload exceeding maximum size limit: {len(image_bytes)} bytes")
         raise HTTPException(
             status_code=413,

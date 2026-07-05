@@ -132,3 +132,52 @@ def test_prediction_inference_failure():
         assert "error" in data
         assert data["error"]["code"] == 500
         assert "TensorFlow execution crashed" in data["error"]["message"]
+
+def test_config_validation_and_parsing():
+    """
+    Test that the config loader successfully parses environment variables
+    and validates them.
+    """
+    from backend.config import load_settings
+    from pydantic import ValidationError
+    import os
+    
+    # 1. Test parsing valid inputs
+    test_env = {
+        "API_TITLE": "Test API",
+        "API_VERSION": "2.0.0",
+        "DEBUG": "true",
+        "MAX_UPLOAD_SIZE": "1000",
+        "ALLOWED_MIME_TYPES": "image/gif,image/bmp",
+        "IMAGE_SIZE": "128,128",
+        "CONFIDENCE_THRESHOLD": "0.85",
+        "CORS_ORIGINS": "http://localhost:3000,http://example.com",
+        "LOGGING_LEVEL": "DEBUG"
+    }
+    
+    with patch.dict(os.environ, test_env):
+        settings = load_settings()
+        assert settings.api_title == "Test API"
+        assert settings.api_version == "2.0.0"
+        assert settings.debug is True
+        assert settings.max_upload_size == 1000
+        assert settings.allowed_mime_types == ["image/gif", "image/bmp"]
+        assert settings.image_size == (128, 128)
+        assert settings.confidence_threshold == 0.85
+        assert settings.cors_origins == ["http://localhost:3000", "http://example.com"]
+        assert settings.logging_level == "DEBUG"
+
+    # 2. Test invalid integer for MAX_UPLOAD_SIZE raises ValidationError
+    with patch.dict(os.environ, {"MAX_UPLOAD_SIZE": "not_an_int"}):
+        with pytest.raises(ValidationError):
+            load_settings()
+
+    # 3. Test invalid logging level raises ValidationError
+    with patch.dict(os.environ, {"LOGGING_LEVEL": "INVALID_LEVEL"}):
+        with pytest.raises(ValidationError):
+            load_settings()
+
+    # 4. Test invalid image size raises ValidationError
+    with patch.dict(os.environ, {"IMAGE_SIZE": "224"}):
+        with pytest.raises(ValidationError):
+            load_settings()

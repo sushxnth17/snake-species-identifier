@@ -3,7 +3,7 @@ import json
 import logging
 from typing import List, Optional
 import tensorflow as tf
-from backend.config import MODEL_PATH, CLASS_NAMES_PATH
+from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +22,13 @@ def load_model() -> tf.keras.Model:
     """
     global _model
     if _model is None:
-        logger.info(f"Loading TensorFlow model from: {MODEL_PATH}")
-        if not os.path.exists(MODEL_PATH):
-            logger.error(f"Model file not found at path: {MODEL_PATH}")
-            raise FileNotFoundError(f"Model file not found at path: {MODEL_PATH}")
+        logger.info(f"Loading TensorFlow model from: {settings.model_path}")
+        if not os.path.exists(settings.model_path):
+            logger.error(f"Model file not found at path: {settings.model_path}")
+            raise FileNotFoundError(f"Model file not found at path: {settings.model_path}")
         
         try:
-            _model = tf.keras.models.load_model(MODEL_PATH)
+            _model = tf.keras.models.load_model(settings.model_path)
             logger.info("TensorFlow model loaded successfully.")
         except Exception as e:
             logger.error(f"Failed to load TensorFlow model: {e}")
@@ -47,13 +47,13 @@ def load_class_names() -> List[str]:
     """
     global _class_names
     if _class_names is None:
-        logger.info(f"Loading class names from: {CLASS_NAMES_PATH}")
-        if not os.path.exists(CLASS_NAMES_PATH):
-            logger.error(f"Class names file not found at path: {CLASS_NAMES_PATH}")
-            raise FileNotFoundError(f"Class names file not found at path: {CLASS_NAMES_PATH}")
+        logger.info(f"Loading class names from: {settings.class_names_path}")
+        if not os.path.exists(settings.class_names_path):
+            logger.error(f"Class names file not found at path: {settings.class_names_path}")
+            raise FileNotFoundError(f"Class names file not found at path: {settings.class_names_path}")
         
         try:
-            with open(CLASS_NAMES_PATH, "r", encoding="utf-8") as f:
+            with open(settings.class_names_path, "r", encoding="utf-8") as f:
                 _class_names = json.load(f)
             logger.info(f"Loaded class names: {_class_names}")
         except Exception as e:
