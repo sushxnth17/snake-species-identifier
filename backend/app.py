@@ -339,9 +339,17 @@ async def predict_species(file: UploadFile = File(..., description="The binary i
     predicted_species, confidence = predictor.format_prediction_results(raw_predictions, class_names)
     
     # 8. Retrieve Safety and Taxonomic Metadata
+    metadata_start = time.perf_counter()
     meta_dict = get_snake_metadata(predicted_species)
+    metadata_duration = time.perf_counter() - metadata_start
     
     total_duration = time.perf_counter() - start_time
+    
+    # Round timings to milliseconds
+    preprocess_time_ms = round(preprocess_duration * 1000, 2)
+    inference_time_ms = round(inference_duration * 1000, 2)
+    metadata_lookup_time_ms = round(metadata_duration * 1000, 2)
+    total_request_duration_ms = round(total_duration * 1000, 2)
     
     # Log structured prediction request details
     logger.info(
@@ -352,14 +360,16 @@ async def predict_species(file: UploadFile = File(..., description="The binary i
             "file_size_bytes": len(image_bytes),
             "prediction": predicted_species,
             "confidence": confidence,
-            "preprocessing_time_seconds": preprocess_duration,
-            "inference_time_seconds": inference_duration,
-            "total_request_duration_seconds": total_duration
+            "preprocessing_time_ms": preprocess_time_ms,
+            "inference_time_ms": inference_time_ms,
+            "metadata_lookup_time_ms": metadata_lookup_time_ms,
+            "total_request_duration_ms": total_request_duration_ms
         }
     )
     
     return PredictionResponse(
         species=predicted_species,
         confidence=confidence,
-        metadata=meta_dict
+        metadata=meta_dict,
+        inference_time_ms=inference_time_ms
     )

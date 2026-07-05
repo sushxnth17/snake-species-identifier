@@ -53,6 +53,11 @@ class PredictionResponse(BaseModel):
         ...,
         description="Taxonomic and safety guidelines metadata corresponding to the predicted species."
     )
+    inference_time_ms: float = Field(
+        ...,
+        description="The model inference duration in milliseconds.",
+        examples=[45.23]
+    )
 
 class ErrorDetail(BaseModel):
     code: int = Field(

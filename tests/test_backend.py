@@ -48,6 +48,8 @@ def test_successful_prediction():
         assert abs(data["confidence"] - 0.95) < 1e-5
         assert "metadata" in data
         assert data["metadata"]["common_name"] == "Spectacled Cobra"
+        assert "inference_time_ms" in data
+        assert isinstance(data["inference_time_ms"], float)
         
         mock_preprocess.assert_called_once_with(dummy_image)
         mock_predict.assert_called_once()
