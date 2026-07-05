@@ -16,6 +16,12 @@ def test_health_check_endpoint():
         response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
+        assert data["api_status"] == "healthy"
+        assert data["model_status"] == "loaded"
+        assert "version" in data
+        assert "uptime_seconds" in data
+        assert "timestamp" in data
+        # Legacy compatibility fields
         assert data["status"] == "healthy"
         assert data["model_loaded"] is True
 
@@ -240,3 +246,78 @@ def test_structured_json_logging():
     log_data_extra = json.loads(formatted_extra)
     assert log_data_extra["uploaded_filename"] == "test_image.png"
     assert log_data_extra["file_size_bytes"] == 1024
+
+def test_model_info_endpoint():
+    """
+    Test GET /model-info returns details about the classification model.
+    """
+    with patch("backend.model_loader._model", MagicMock()), \
+         patch("backend.model_loader.get_class_names", return_value=["cobra", "krait"]):
+        response = client.get("/model-info")
+        assert response.status_code == 200
+        data = response.json()
+        assert "model_name" in data
+        assert data["model_format"] in ("Keras", "HDF5", "SavedModel")
+        assert data["supported_classes"] == ["cobra", "krait"]
+        assert "image_size" in data
+        assert "confidence_threshold" in data
+        assert data["model_loaded_status"] is True
+
+def test_metrics_endpoint():
+    """
+    Test GET /metrics correctly tracks and returns prediction attempts and uptime.
+    """
+    # Clear / reset metrics
+    from backend.app import metrics_tracker
+    metrics_tracker.total_predictions = 0
+    metrics_tracker.successful_predictions = 0
+    metrics_tracker.failed_predictions = 0
+    metrics_tracker.total_inference_time_ms = 0.0
+
+    # 1. Fetch initial metrics
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    initial_data = response.json()
+    assert initial_data["total_predictions"] == 0
+    assert initial_data["successful_predictions"] == 0
+    assert initial_data["failed_predictions"] == 0
+    assert initial_data["average_inference_time_ms"] == 0.0
+    assert "uptime_seconds" in initial_data
+
+    # 2. Trigger a successful prediction request (mocked)
+    mock_preprocessed = np.zeros((1, 224, 224, 3), dtype=np.float32)
+    mock_raw_predictions = np.array([[0.95, 0.05]], dtype=np.float32)
+    mock_classes = ["cobra", "krait"]
+
+    with patch("backend.model_loader.get_model") as mock_get_model, \
+         patch("backend.predictor.preprocess_image", return_value=mock_preprocessed), \
+         patch("backend.predictor.predict", return_value=mock_raw_predictions), \
+         patch("backend.model_loader.get_class_names", return_value=mock_classes):
+        
+        dummy_image = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+            b"\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00"
+            b"\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        files = {"file": ("test.png", dummy_image, "image/png")}
+        client.post("/predict", files=files)
+
+    # 3. Verify metrics incremented
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_predictions"] == 1
+    assert data["successful_predictions"] == 1
+    assert data["failed_predictions"] == 0
+
+    # 4. Trigger a failed prediction request (MIME validation error)
+    files = {"file": ("test.txt", b"plain text", "text/plain")}
+    client.post("/predict", files=files)
+
+    # 5. Verify failed predictions incremented
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_predictions"] == 2
+    assert data["successful_predictions"] == 1
+    assert data["failed_predictions"] == 1

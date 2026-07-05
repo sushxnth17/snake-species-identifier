@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from typing import List, Tuple
 
 class SnakeMetadata(BaseModel):
     common_name: str = Field(
@@ -75,4 +76,100 @@ class ErrorResponse(BaseModel):
     error: ErrorDetail = Field(
         ...,
         description="Wrapper containing the detailed error response structure."
+    )
+
+class ModelInfoResponse(BaseModel):
+    model_name: str = Field(
+        ...,
+        description="The filename of the classification model.",
+        examples=["snake_classifier.keras"]
+    )
+    model_format: str = Field(
+        ...,
+        description="The serialization format of the model.",
+        examples=["Keras"]
+    )
+    supported_classes: List[str] = Field(
+        ...,
+        description="List of target snake species classes the model was trained to predict.",
+        examples=[["cobra", "krait"]]
+    )
+    image_size: Tuple[int, int] = Field(
+        ...,
+        description="Image dimensions height and width expected by the model.",
+        examples=[(224, 224)]
+    )
+    confidence_threshold: float = Field(
+        ...,
+        description="The minimum confidence threshold required for predictions.",
+        examples=[0.60]
+    )
+    model_loaded_status: bool = Field(
+        ...,
+        description="True if the model has been successfully initialized into system memory.",
+        examples=[True]
+    )
+
+class MetricsResponse(BaseModel):
+    total_predictions: int = Field(
+        ...,
+        description="Total number of prediction requests received since startup.",
+        examples=[10]
+    )
+    average_inference_time_ms: float = Field(
+        ...,
+        description="Average execution time of model predictions in milliseconds.",
+        examples=[24.52]
+    )
+    uptime_seconds: float = Field(
+        ...,
+        description="Application running duration in seconds.",
+        examples=[3600.5]
+    )
+    successful_predictions: int = Field(
+        ...,
+        description="Number of prediction requests that completed successfully.",
+        examples=[8]
+    )
+    failed_predictions: int = Field(
+        ...,
+        description="Number of prediction requests that encountered errors or exceptions.",
+        examples=[2]
+    )
+
+class HealthResponse(BaseModel):
+    api_status: str = Field(
+        ...,
+        description="Operational status of the FastAPI server.",
+        examples=["healthy"]
+    )
+    model_status: str = Field(
+        ...,
+        description="Load status of the classification model.",
+        examples=["loaded"]
+    )
+    version: str = Field(
+        ...,
+        description="The version of the API service.",
+        examples=["1.0.0"]
+    )
+    uptime_seconds: float = Field(
+        ...,
+        description="Application running duration in seconds.",
+        examples=[3600.5]
+    )
+    timestamp: str = Field(
+        ...,
+        description="Current UTC timestamp in ISO 8601 format.",
+        examples=["2026-07-05T21:40:00Z"]
+    )
+    status: str = Field(
+        ...,
+        description="Legacy status string.",
+        examples=["healthy"]
+    )
+    model_loaded: bool = Field(
+        ...,
+        description="Legacy model load status indicator.",
+        examples=[True]
     )

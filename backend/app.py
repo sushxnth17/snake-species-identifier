@@ -7,16 +7,22 @@ import time
 import logging
 import uuid
 
+import os
+from datetime import datetime
 from backend.config import settings
-from backend.schemas import PredictionResponse, ErrorResponse
+from backend.schemas import PredictionResponse, ErrorResponse, ModelInfoResponse, MetricsResponse, HealthResponse
 from backend.logging_config import setup_structured_logging, request_id_var
 from backend import model_loader
 from backend import predictor
 from backend.metadata import get_snake_metadata
+from backend.metrics import DiagnosticsMetrics
 
 # Setup Logging
 setup_structured_logging(settings.logging_level)
 logger = logging.getLogger(__name__)
+
+# Initialize metrics tracker
+metrics_tracker = DiagnosticsMetrics()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -181,6 +187,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 @app.get(
     "/health",
+    response_model=HealthResponse,
     summary="Check System Health",
     description="Verifies the operational status of the API service, CORS bindings, and checks whether the TensorFlow classification model has successfully loaded into memory.",
     response_description="A JSON status object indicating health and model load state.",
@@ -190,6 +197,11 @@ async def general_exception_handler(request: Request, exc: Exception):
             "content": {
                 "application/json": {
                     "example": {
+                        "api_status": "healthy",
+                        "model_status": "loaded",
+                        "version": "1.0.0",
+                        "uptime_seconds": 120.45,
+                        "timestamp": "2026-07-05T21:40:00Z",
                         "status": "healthy",
                         "model_loaded": True
                     }
@@ -200,7 +212,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 )
 def health_check(request: Request):
     """
-    Health check endpoint to verify backend status and model readiness.
+    Health check endpoint to verify backend status, model readiness, uptime, and version.
     """
     logger.info(
         "Health endpoint accessed",
@@ -210,9 +222,84 @@ def health_check(request: Request):
         }
     )
     model_loaded = model_loader._model is not None
+    model_status = "loaded" if model_loaded else "not_loaded"
+    uptime_sec = round(metrics_tracker.uptime, 2)
+    timestamp_str = datetime.utcnow().isoformat() + "Z"
+    
     return {
+        "api_status": "healthy",
+        "model_status": model_status,
+        "version": settings.api_version,
+        "uptime_seconds": uptime_sec,
+        "timestamp": timestamp_str,
+        # Backward compatibility legacy fields
         "status": "healthy",
         "model_loaded": model_loaded
+    }
+
+@app.get(
+    "/model-info",
+    response_model=ModelInfoResponse,
+    summary="Get Classification Model Information",
+    description="Returns metadata about the active machine learning model, including model format, name, supported classes, input size, and whether the weights are loaded.",
+    response_description="A structured object detailing model attributes and readiness."
+)
+def get_model_info(request: Request):
+    """
+    Get detailed information about the configured machine learning model.
+    """
+    logger.info(
+        "Model info endpoint accessed",
+        extra={
+            "event": "model_info_check",
+            "endpoint": request.url.path
+        }
+    )
+    
+    try:
+        supported_classes = model_loader.get_class_names()
+    except Exception:
+        supported_classes = []
+        
+    model_loaded = model_loader._model is not None
+    model_filename = os.path.basename(settings.model_path)
+    
+    model_ext = os.path.splitext(model_filename)[1].lower()
+    model_format = "Keras" if model_ext == ".keras" else ("HDF5" if model_ext in (".h5", ".hdf5") else "SavedModel")
+    
+    return {
+        "model_name": model_filename,
+        "model_format": model_format,
+        "supported_classes": supported_classes,
+        "image_size": settings.image_size,
+        "confidence_threshold": settings.confidence_threshold,
+        "model_loaded_status": model_loaded
+    }
+
+@app.get(
+    "/metrics",
+    response_model=MetricsResponse,
+    summary="Get Application Performance Metrics",
+    description="Returns metrics tracking overall request counts, successful predictions, failed predictions, uptime, and average inference latency.",
+    response_description="A JSON object holding latency and outcome metrics."
+)
+def get_metrics(request: Request):
+    """
+    Retrieve application diagnostics and prediction performance counters.
+    """
+    logger.info(
+        "Metrics endpoint accessed",
+        extra={
+            "event": "metrics_check",
+            "endpoint": request.url.path
+        }
+    )
+    return {
+        "total_predictions": metrics_tracker.total_predictions,
+        "average_inference_time_ms": metrics_tracker.average_inference_time,
+        "uptime_seconds": round(metrics_tracker.uptime, 2),
+        "successful_predictions": metrics_tracker.successful_predictions,
+        "failed_predictions": metrics_tracker.failed_predictions
     }
 
 @app.post(
@@ -264,112 +351,118 @@ async def predict_species(file: UploadFile = File(..., description="The binary i
     Validates file existence, MIME type, and size limits before running inference.
     """
     start_time = time.perf_counter()
-    
-    # 1. Validate MIME type first (quick check on headers)
-    if file.content_type not in settings.allowed_mime_types:
-        logger.warning(
-            f"Rejected upload with unsupported MIME type: {file.content_type}",
-            extra={"event": "validation_failed", "detail": "unsupported_mime_type"}
-        )
-        raise HTTPException(
-            status_code=415,
-            detail=f"Unsupported media type: '{file.content_type}'. Allowed types: {', '.join(settings.allowed_mime_types)}"
-        )
-        
-    # Read file content into memory
-    image_bytes = await file.read()
-    
-    # 2. Validate file existence
-    if not image_bytes or len(image_bytes) == 0:
-        logger.warning(
-            "Rejected upload with empty file content.",
-            extra={"event": "validation_failed", "detail": "empty_file"}
-        )
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-        
-    # 3. Validate maximum upload size
-    if len(image_bytes) > settings.max_upload_size:
-        max_mb = settings.max_upload_size / (1024 * 1024)
-        logger.warning(
-            f"Rejected upload exceeding maximum size limit: {len(image_bytes)} bytes",
-            extra={"event": "validation_failed", "detail": "file_too_large"}
-        )
-        raise HTTPException(
-            status_code=413,
-            detail=f"File size exceeds the maximum limit of {max_mb:.1f}MB."
-        )
-        
-    # 4. Preprocess image
-    preprocess_start = time.perf_counter()
-    preprocessed = predictor.preprocess_image(image_bytes)
-    preprocess_duration = time.perf_counter() - preprocess_start
-    
-    # 5. Run prediction
     try:
-        model = model_loader.get_model()
-    except RuntimeError as e:
-        logger.warning(
-            "Model was not loaded on startup. Attempting lazy load...",
-            extra={"event": "lazy_load_attempt"}
-        )
-        try:
-            model = model_loader.load_model()
-        except Exception as lazy_err:
-            logger.error(
-                f"Lazy loading model failed: {lazy_err}",
-                exc_info=lazy_err,
-                extra={"event": "lazy_load_failed"}
+        # 1. Validate MIME type first (quick check on headers)
+        if file.content_type not in settings.allowed_mime_types:
+            logger.warning(
+                f"Rejected upload with unsupported MIME type: {file.content_type}",
+                extra={"event": "validation_failed", "detail": "unsupported_mime_type"}
             )
             raise HTTPException(
-                status_code=503,
-                detail="Model is not available. Please try again later."
+                status_code=415,
+                detail=f"Unsupported media type: '{file.content_type}'. Allowed types: {', '.join(settings.allowed_mime_types)}"
             )
             
-    inference_start = time.perf_counter()
-    raw_predictions = predictor.predict(model, preprocessed)
-    inference_duration = time.perf_counter() - inference_start
-    
-    # 6. Read class names
-    try:
-        class_names = model_loader.get_class_names()
-    except Exception:
-        class_names = model_loader.load_class_names()
+        # Read file content into memory
+        image_bytes = await file.read()
         
-    # 7. Extract predicted class and confidence
-    predicted_species, confidence = predictor.format_prediction_results(raw_predictions, class_names)
-    
-    # 8. Retrieve Safety and Taxonomic Metadata
-    metadata_start = time.perf_counter()
-    meta_dict = get_snake_metadata(predicted_species)
-    metadata_duration = time.perf_counter() - metadata_start
-    
-    total_duration = time.perf_counter() - start_time
-    
-    # Round timings to milliseconds
-    preprocess_time_ms = round(preprocess_duration * 1000, 2)
-    inference_time_ms = round(inference_duration * 1000, 2)
-    metadata_lookup_time_ms = round(metadata_duration * 1000, 2)
-    total_request_duration_ms = round(total_duration * 1000, 2)
-    
-    # Log structured prediction request details
-    logger.info(
-        f"Prediction completed for {file.filename}: {predicted_species} ({confidence:.4f})",
-        extra={
-            "event": "prediction_request",
-            "uploaded_filename": file.filename,
-            "file_size_bytes": len(image_bytes),
-            "prediction": predicted_species,
-            "confidence": confidence,
-            "preprocessing_time_ms": preprocess_time_ms,
-            "inference_time_ms": inference_time_ms,
-            "metadata_lookup_time_ms": metadata_lookup_time_ms,
-            "total_request_duration_ms": total_request_duration_ms
-        }
-    )
-    
-    return PredictionResponse(
-        species=predicted_species,
-        confidence=confidence,
-        metadata=meta_dict,
-        inference_time_ms=inference_time_ms
-    )
+        # 2. Validate file existence
+        if not image_bytes or len(image_bytes) == 0:
+            logger.warning(
+                "Rejected upload with empty file content.",
+                extra={"event": "validation_failed", "detail": "empty_file"}
+            )
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+            
+        # 3. Validate maximum upload size
+        if len(image_bytes) > settings.max_upload_size:
+            max_mb = settings.max_upload_size / (1024 * 1024)
+            logger.warning(
+                f"Rejected upload exceeding maximum size limit: {len(image_bytes)} bytes",
+                extra={"event": "validation_failed", "detail": "file_too_large"}
+            )
+            raise HTTPException(
+                status_code=413,
+                detail=f"File size exceeds the maximum limit of {max_mb:.1f}MB."
+            )
+            
+        # 4. Preprocess image
+        preprocess_start = time.perf_counter()
+        preprocessed = predictor.preprocess_image(image_bytes)
+        preprocess_duration = time.perf_counter() - preprocess_start
+        
+        # 5. Run prediction
+        try:
+            model = model_loader.get_model()
+        except RuntimeError as e:
+            logger.warning(
+                "Model was not loaded on startup. Attempting lazy load...",
+                extra={"event": "lazy_load_attempt"}
+            )
+            try:
+                model = model_loader.load_model()
+            except Exception as lazy_err:
+                logger.error(
+                    f"Lazy loading model failed: {lazy_err}",
+                    exc_info=lazy_err,
+                    extra={"event": "lazy_load_failed"}
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail="Model is not available. Please try again later."
+                )
+                
+        inference_start = time.perf_counter()
+        raw_predictions = predictor.predict(model, preprocessed)
+        inference_duration = time.perf_counter() - inference_start
+        
+        # 6. Read class names
+        try:
+            class_names = model_loader.get_class_names()
+        except Exception:
+            class_names = model_loader.load_class_names()
+            
+        # 7. Extract predicted class and confidence
+        predicted_species, confidence = predictor.format_prediction_results(raw_predictions, class_names)
+        
+        # 8. Retrieve Safety and Taxonomic Metadata
+        metadata_start = time.perf_counter()
+        meta_dict = get_snake_metadata(predicted_species)
+        metadata_duration = time.perf_counter() - metadata_start
+        
+        total_duration = time.perf_counter() - start_time
+        
+        # Round timings to milliseconds
+        preprocess_time_ms = round(preprocess_duration * 1000, 2)
+        inference_time_ms = round(inference_duration * 1000, 2)
+        metadata_lookup_time_ms = round(metadata_duration * 1000, 2)
+        total_request_duration_ms = round(total_duration * 1000, 2)
+        
+        # Record successful prediction metrics
+        metrics_tracker.record_prediction(inference_time_ms, success=True)
+        
+        # Log structured prediction request details
+        logger.info(
+            f"Prediction completed for {file.filename}: {predicted_species} ({confidence:.4f})",
+            extra={
+                "event": "prediction_request",
+                "uploaded_filename": file.filename,
+                "file_size_bytes": len(image_bytes),
+                "prediction": predicted_species,
+                "confidence": confidence,
+                "preprocessing_time_ms": preprocess_time_ms,
+                "inference_time_ms": inference_time_ms,
+                "metadata_lookup_time_ms": metadata_lookup_time_ms,
+                "total_request_duration_ms": total_request_duration_ms
+            }
+        )
+        
+        return PredictionResponse(
+            species=predicted_species,
+            confidence=confidence,
+            metadata=meta_dict,
+            inference_time_ms=inference_time_ms
+        )
+    except Exception as e:
+        metrics_tracker.record_prediction(0.0, success=False)
+        raise e
