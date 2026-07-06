@@ -21,6 +21,9 @@ from backend.metadata import get_snake_metadata
 from backend.metrics import DiagnosticsMetrics, metrics_tracker
 from backend.dependencies import get_settings, get_logger, get_metrics_tracker, get_model, get_class_names
 
+from backend.validation import validate_uploaded_image, read_and_validate_size
+from backend.rate_limit import check_rate_limit_dependency, rate_limiter_cleanup_task
+from backend.middleware import SecurityAndLoggingMiddleware
 # Setup Logging
 setup_structured_logging(settings.logging_level)
 logger = logging.getLogger(__name__)
@@ -55,8 +58,26 @@ async def lifespan(app: FastAPI):
                 "startup_duration_seconds": startup_duration
             }
         )
+
+    # Start background cleanup task for rate limiter
+    cleanup_task = None
+    if settings.rate_limit_enabled:
+        import asyncio
+        cleanup_task = asyncio.create_task(
+            rate_limiter_cleanup_task(settings.rate_limit_window)
+        )
+        logger.info("Rate limiter background cleanup task started.", extra={"event": "rate_limit_cleanup_started"})
+
     yield
     # Shutdown logic
+    if cleanup_task is not None:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Rate limiter background cleanup task stopped.", extra={"event": "rate_limit_cleanup_stopped"})
+        
     logger.info("Cleaning up application resources during shutdown lifespan...", extra={"event": "shutdown_cleanup"})
 
 app = FastAPI(
@@ -76,17 +97,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Request ID & Logging Middleware
-@app.middleware("http")
-async def add_request_id_and_log(request: Request, call_next):
-    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-    token = request_id_var.set(request_id)
-    try:
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
-    finally:
-        request_id_var.reset(token)
+# Security, Logging, and Abuse Detection Middleware
+app.add_middleware(SecurityAndLoggingMiddleware)
 
 
 # --- Global Exception Handlers ---
@@ -104,7 +116,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     )
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": {"code": exc.status_code, "message": exc.detail}}
+        content={"error": {"code": exc.status_code, "message": exc.detail}},
+        headers=getattr(exc, "headers", None)
     )
 
 @app.exception_handler(RequestValidationError)
@@ -314,6 +327,7 @@ def get_metrics(
 
 @app.post(
     "/predict",
+    dependencies=[Depends(check_rate_limit_dependency)],
     response_model=PredictionResponse,
     summary="Predict Snake Species from Image",
     description=(
@@ -356,6 +370,7 @@ def get_metrics(
     }
 )
 async def predict_species(
+    request: Request,
     file: UploadFile = File(..., description="The binary image of the snake to classify (JPEG, PNG, or WebP format)."),
     settings: Settings = Depends(get_settings),
     logger: logging.Logger = Depends(get_logger),
@@ -369,39 +384,11 @@ async def predict_species(
     """
     start_time = time.perf_counter()
     try:
-        # 1. Validate MIME type first (quick check on headers)
-        if file.content_type not in settings.allowed_mime_types:
-            logger.warning(
-                f"Rejected upload with unsupported MIME type: {file.content_type}",
-                extra={"event": "validation_failed", "detail": "unsupported_mime_type"}
-            )
-            raise HTTPException(
-                status_code=415,
-                detail=f"Unsupported media type: '{file.content_type}'. Allowed types: {', '.join(settings.allowed_mime_types)}"
-            )
-            
-        # Read file content into memory
-        image_bytes = await file.read()
+        # Read and validate file size on-the-fly to prevent memory exhaustion
+        image_bytes = await read_and_validate_size(file, settings.max_upload_size, request)
         
-        # 2. Validate file existence
-        if not image_bytes or len(image_bytes) == 0:
-            logger.warning(
-                "Rejected upload with empty file content.",
-                extra={"event": "validation_failed", "detail": "empty_file"}
-            )
-            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-            
-        # 3. Validate maximum upload size
-        if len(image_bytes) > settings.max_upload_size:
-            max_mb = settings.max_upload_size / (1024 * 1024)
-            logger.warning(
-                f"Rejected upload exceeding maximum size limit: {len(image_bytes)} bytes",
-                extra={"event": "validation_failed", "detail": "file_too_large"}
-            )
-            raise HTTPException(
-                status_code=413,
-                detail=f"File size exceeds the maximum limit of {max_mb:.1f}MB."
-            )
+        # Validate the uploaded image file using the dedicated validation module
+        validate_uploaded_image(file, image_bytes, settings)
             
         # 4. Preprocess image
         preprocess_start = time.perf_counter()

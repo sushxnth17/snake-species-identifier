@@ -8,6 +8,17 @@ from backend.schemas import PredictionResponse
 
 client = TestClient(app)
 
+from PIL import Image
+import io
+
+def generate_valid_image(fmt: str) -> bytes:
+    img = Image.new("RGB", (10, 10), color="blue")
+    buf = io.BytesIO()
+    img.save(buf, format=fmt)
+    return buf.getvalue()
+
+DUMMY_PNG_BYTES = generate_valid_image("PNG")
+
 @pytest.fixture(autouse=True)
 def override_test_dependencies():
     from backend.dependencies import get_model, get_class_names
@@ -47,13 +58,7 @@ def test_successful_prediction():
          patch("backend.predictor.predict", return_value=mock_raw_predictions) as mock_predict, \
          patch("backend.model_loader.get_class_names", return_value=mock_classes) as mock_get_classes:
         
-        # Valid tiny 1x1 PNG pixel bytes
-        dummy_image = (
-            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
-            b"\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00"
-            b"\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
-        )
-        files = {"file": ("test.png", dummy_image, "image/png")}
+        files = {"file": ("test.png", DUMMY_PNG_BYTES, "image/png")}
         
         response = client.post("/predict", files=files)
         
@@ -66,7 +71,7 @@ def test_successful_prediction():
         assert "inference_time_ms" in data
         assert isinstance(data["inference_time_ms"], float)
         
-        mock_preprocess.assert_called_once_with(dummy_image)
+        mock_preprocess.assert_called_once_with(DUMMY_PNG_BYTES)
         mock_predict.assert_called_once()
 
 def test_prediction_invalid_file():
@@ -75,7 +80,7 @@ def test_prediction_invalid_file():
     It should raise a ValueError and return HTTP 400.
     """
     with patch("backend.predictor.preprocess_image", side_effect=ValueError("Invalid image format or content")):
-        files = {"file": ("corrupt.png", b"corrupted bytes here", "image/png")}
+        files = {"file": ("corrupt.png", DUMMY_PNG_BYTES, "image/png")}
         response = client.post("/predict", files=files)
         
         assert response.status_code == 400
@@ -126,7 +131,7 @@ def test_prediction_missing_model():
     app.dependency_overrides[get_model] = mock_get_model_fail
     
     with patch("backend.predictor.preprocess_image", return_value=np.zeros((1, 224, 224, 3))):
-        files = {"file": ("test.png", b"dummy image content", "image/png")}
+        files = {"file": ("test.png", DUMMY_PNG_BYTES, "image/png")}
         response = client.post("/predict", files=files)
         
         assert response.status_code == 503
@@ -146,7 +151,7 @@ def test_prediction_inference_failure():
          patch("backend.predictor.preprocess_image", return_value=mock_preprocessed), \
          patch("backend.predictor.predict", side_effect=RuntimeError("TensorFlow execution crashed")):
          
-        files = {"file": ("test.png", b"dummy image content", "image/png")}
+        files = {"file": ("test.png", DUMMY_PNG_BYTES, "image/png")}
         response = client.post("/predict", files=files)
         
         assert response.status_code == 500
@@ -201,6 +206,11 @@ def test_config_validation_and_parsing():
 
     # 4. Test invalid image size raises ValidationError
     with patch.dict(os.environ, {"IMAGE_SIZE": "224"}):
+        with pytest.raises(ValidationError):
+            load_settings()
+
+    # 5. Test wildcard CORS_ORIGINS raises ValidationError
+    with patch.dict(os.environ, {"CORS_ORIGINS": "*"}):
         with pytest.raises(ValidationError):
             load_settings()
 
@@ -308,12 +318,7 @@ def test_metrics_endpoint():
          patch("backend.predictor.predict", return_value=mock_raw_predictions), \
          patch("backend.model_loader.get_class_names", return_value=mock_classes):
         
-        dummy_image = (
-            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
-            b"\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00"
-            b"\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
-        )
-        files = {"file": ("test.png", dummy_image, "image/png")}
+        files = {"file": ("test.png", DUMMY_PNG_BYTES, "image/png")}
         client.post("/predict", files=files)
 
     # 3. Verify metrics incremented
@@ -335,3 +340,325 @@ def test_metrics_endpoint():
     assert data["total_predictions"] == 2
     assert data["successful_predictions"] == 1
     assert data["failed_predictions"] == 1
+
+def test_validate_image_success_jpeg():
+    """
+    Test successful prediction with a valid JPEG image.
+    """
+    from PIL import Image
+    import io
+    img = Image.new("RGB", (10, 10), color="red")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    jpeg_bytes = buf.getvalue()
+
+    mock_preprocessed = np.zeros((1, 224, 224, 3), dtype=np.float32)
+    mock_raw_predictions = np.array([[0.95, 0.05]], dtype=np.float32)
+    mock_classes = ["cobra", "krait"]
+
+    with patch("backend.predictor.preprocess_image", return_value=mock_preprocessed), \
+         patch("backend.predictor.predict", return_value=mock_raw_predictions), \
+         patch("backend.model_loader.get_class_names", return_value=mock_classes):
+        
+        files = {"file": ("test.jpg", jpeg_bytes, "image/jpeg")}
+        response = client.post("/predict", files=files)
+        assert response.status_code == 200
+        assert response.json()["species"] == "cobra"
+
+def test_validate_image_success_webp():
+    """
+    Test successful prediction with a valid WebP image.
+    """
+    from PIL import Image
+    import io
+    img = Image.new("RGB", (10, 10), color="green")
+    buf = io.BytesIO()
+    img.save(buf, format="WEBP")
+    webp_bytes = buf.getvalue()
+
+    mock_preprocessed = np.zeros((1, 224, 224, 3), dtype=np.float32)
+    mock_raw_predictions = np.array([[0.95, 0.05]], dtype=np.float32)
+    mock_classes = ["cobra", "krait"]
+
+    with patch("backend.predictor.preprocess_image", return_value=mock_preprocessed), \
+         patch("backend.predictor.predict", return_value=mock_raw_predictions), \
+         patch("backend.model_loader.get_class_names", return_value=mock_classes):
+        
+        files = {"file": ("test.webp", webp_bytes, "image/webp")}
+        response = client.post("/predict", files=files)
+        assert response.status_code == 200
+        assert response.json()["species"] == "cobra"
+
+def test_validate_image_mismatched_mime():
+    """
+    Test uploading a valid PNG structure but declaring MIME type as image/jpeg.
+    It should return HTTP 400 with a signature mismatch error.
+    """
+    # Declared as image/jpeg but actually PNG bytes
+    files = {"file": ("mismatch.jpg", DUMMY_PNG_BYTES, "image/jpeg")}
+    response = client.post("/predict", files=files)
+    
+    assert response.status_code == 400
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 400
+    assert "File signature (magic bytes) does not match the MIME type" in data["error"]["message"]
+
+def test_validate_image_renamed_executable():
+    """
+    Test uploading a renamed executable file.
+    It should return HTTP 400 stating that renamed executable files are not allowed.
+    """
+    exe_mock_content = b"MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff\x00\x00" + b"A" * 100
+    files = {"file": ("malicious.png", exe_mock_content, "image/png")}
+    response = client.post("/predict", files=files)
+    
+    assert response.status_code == 400
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 400
+    assert "Renamed executable files are not allowed." in data["error"]["message"]
+
+def test_validate_image_corrupted_image():
+    """
+    Test uploading a corrupted image file (valid signature, but invalid body).
+    It should fail Pillow validation and return HTTP 400.
+    """
+    # Start with PNG header but garbage bytes afterwards
+    corrupted_content = b"\x89PNG\r\n\x1a\n\xff\xff\xff\xff"
+    files = {"file": ("corrupted.png", corrupted_content, "image/png")}
+    response = client.post("/predict", files=files)
+    
+    assert response.status_code == 400
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 400
+    assert "Invalid or corrupted image" in data["error"]["message"]
+
+def test_validate_image_size_exceeded():
+    """
+    Test uploading a file that exceeds the maximum size limit.
+    It should return HTTP 413.
+    """
+    from backend.config import settings
+    # Create content larger than max_upload_size
+    large_content = DUMMY_PNG_BYTES + b"A" * (settings.max_upload_size + 10)
+    files = {"file": ("large.png", large_content, "image/png")}
+    response = client.post("/predict", files=files)
+    
+    assert response.status_code == 413
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 413
+    assert "File size exceeds the maximum limit" in data["error"]["message"]
+
+def test_validate_image_width_exceeded():
+    """
+    Test uploading an image with width exceeding the configured limit.
+    """
+    from PIL import Image
+    import io
+    from backend.config import settings
+    
+    # Generate an image with width larger than settings.max_image_width
+    img = Image.new("RGB", (settings.max_image_width + 1, 10), color="blue")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+    
+    files = {"file": ("wide.png", png_bytes, "image/png")}
+    response = client.post("/predict", files=files)
+    
+    assert response.status_code == 400
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 400
+    assert "exceed maximum allowed limits" in data["error"]["message"]
+
+def test_validate_image_height_exceeded():
+    """
+    Test uploading an image with height exceeding the configured limit.
+    """
+    from PIL import Image
+    import io
+    from backend.config import settings
+    
+    # Generate an image with height larger than settings.max_image_height
+    img = Image.new("RGB", (10, settings.max_image_height + 1), color="blue")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+    
+    files = {"file": ("tall.png", png_bytes, "image/png")}
+    response = client.post("/predict", files=files)
+    
+    assert response.status_code == 400
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 400
+    assert "exceed maximum allowed limits" in data["error"]["message"]
+
+def test_validate_image_size_early_rejection_header():
+    """
+    Test early size rejection using Content-Length header.
+    """
+    from backend.config import settings
+    large_content_length = str(settings.max_upload_size + 1000)
+    files = {"file": ("test.png", DUMMY_PNG_BYTES, "image/png")}
+    
+    response = client.post(
+        "/predict",
+        files=files,
+        headers={"Content-Length": large_content_length}
+    )
+    
+    assert response.status_code == 413
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 413
+    assert "exceeds the maximum limit" in data["error"]["message"]
+
+def test_rate_limiting_enforced():
+    """
+    Test that rate limiting blocks requests exceeding the configured limit
+    and returns HTTP 429 with a Retry-After header.
+    """
+    from backend.config import settings
+    from backend.rate_limit import rate_limiter_instance
+    
+    # Enable rate limiting and set threshold to 2 requests
+    settings.rate_limit_enabled = True
+    settings.rate_limit_requests = 2
+    settings.rate_limit_window = 10
+    
+    # Reset state
+    rate_limiter_instance.history.clear()
+    
+    mock_preprocessed = np.zeros((1, 224, 224, 3), dtype=np.float32)
+    mock_raw_predictions = np.array([[0.95, 0.05]], dtype=np.float32)
+    mock_classes = ["cobra", "krait"]
+    
+    with patch("backend.predictor.preprocess_image", return_value=mock_preprocessed), \
+         patch("backend.predictor.predict", return_value=mock_raw_predictions), \
+         patch("backend.model_loader.get_class_names", return_value=mock_classes):
+        
+        files = {"file": ("test.png", DUMMY_PNG_BYTES, "image/png")}
+        
+        # 1st request (allowed)
+        response1 = client.post("/predict", files=files)
+        assert response1.status_code == 200
+        
+        # 2nd request (allowed)
+        response2 = client.post("/predict", files=files)
+        assert response2.status_code == 200
+        
+        # 3rd request (blocked)
+        response3 = client.post("/predict", files=files)
+        assert response3.status_code == 429
+        
+        data = response3.json()
+        assert "error" in data
+        assert data["error"]["code"] == 429
+        assert "Rate limit exceeded" in data["error"]["message"]
+        assert "Retry-After" in response3.headers
+        assert int(response3.headers["Retry-After"]) > 0
+
+def test_rate_limiting_disabled():
+    """
+    Test that rate limiting does not block requests when disabled.
+    """
+    from backend.config import settings
+    from backend.rate_limit import rate_limiter_instance
+    
+    # Disable rate limiting
+    settings.rate_limit_enabled = False
+    settings.rate_limit_requests = 2
+    settings.rate_limit_window = 10
+    
+    # Reset state
+    rate_limiter_instance.history.clear()
+    
+    mock_preprocessed = np.zeros((1, 224, 224, 3), dtype=np.float32)
+    mock_raw_predictions = np.array([[0.95, 0.05]], dtype=np.float32)
+    mock_classes = ["cobra", "krait"]
+    
+    with patch("backend.predictor.preprocess_image", return_value=mock_preprocessed), \
+         patch("backend.predictor.predict", return_value=mock_raw_predictions), \
+         patch("backend.model_loader.get_class_names", return_value=mock_classes):
+        
+        files = {"file": ("test.png", DUMMY_PNG_BYTES, "image/png")}
+        
+        # All 3 requests should be allowed
+        for _ in range(3):
+            response = client.post("/predict", files=files)
+            assert response.status_code == 200
+
+def test_middleware_security_headers():
+    """
+    Test that standard security headers are applied to HTTP responses.
+    """
+    response = client.get("/health")
+    assert response.status_code == 200
+    headers = response.headers
+    
+    assert headers["X-Frame-Options"] == "DENY"
+    assert headers["X-Content-Type-Options"] == "nosniff"
+    assert headers["X-XSS-Protection"] == "1; mode=block"
+    assert headers["Referrer-Policy"] == "no-referrer-when-downgrade"
+    assert "default-src 'self'" in headers["Content-Security-Policy"]
+    assert "Strict-Transport-Security" in headers
+    assert "X-Request-ID" in headers
+
+def test_middleware_abuse_detection_uri_too_long():
+    """
+    Test that requests with excessively long URIs (> 2048 characters) are blocked with HTTP 414.
+    """
+    long_query = "a" * 2100
+    response = client.get(f"/health?query={long_query}")
+    
+    assert response.status_code == 414
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 414
+    assert "URI Too Long" in data["error"]["message"]
+
+def test_middleware_abuse_detection_path_scanning():
+    """
+    Test that requests probing for sensitive folders/files (e.g. .git, .env, .php)
+    are blocked with HTTP 400 Bad Request.
+    """
+    blocked_paths = [
+        "/health/.git/config",
+        "/wp-admin",
+        "/eval-stdin.php",
+        "/.env",
+        "/phpmyadmin"
+    ]
+    
+    for path in blocked_paths:
+        response = client.get(path)
+        assert response.status_code == 400
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["code"] == 400
+        assert "Bad Request" in data["error"]["message"]
+
+def test_prediction_missing_file_field():
+    """
+    Test sending a POST /predict request without the required 'file' parameter.
+    It should return HTTP 422 with a validation error message.
+    """
+    response = client.post("/predict")
+    assert response.status_code == 422
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 422
+    assert "Validation Error" in data["error"]["message"]
+
+def test_prediction_invalid_method():
+    """
+    Test sending a GET request to /predict (which only accepts POST).
+    It should return HTTP 405 Method Not Allowed.
+    """
+    response = client.get("/predict")
+    assert response.status_code == 405

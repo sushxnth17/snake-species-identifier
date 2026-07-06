@@ -37,6 +37,26 @@ class Settings(BaseModel):
         default=5 * 1024 * 1024,
         description="Maximum allowed upload size in bytes"
     )
+    max_image_width: int = Field(
+        default=4096,
+        description="Maximum allowed image width in pixels"
+    )
+    max_image_height: int = Field(
+        default=4096,
+        description="Maximum allowed image height in pixels"
+    )
+    rate_limit_enabled: bool = Field(
+        default=True,
+        description="Enable or disable API rate limiting"
+    )
+    rate_limit_requests: int = Field(
+        default=100,
+        description="Number of allowed requests within the rate limit window"
+    )
+    rate_limit_window: int = Field(
+        default=60,
+        description="Rate limit window in seconds"
+    )
     allowed_mime_types: List[str] = Field(
         default=["image/jpeg", "image/png", "image/webp"],
         description="Allowed image MIME types"
@@ -50,8 +70,19 @@ class Settings(BaseModel):
         description="Confidence threshold for snake classification"
     )
     cors_origins: List[str] = Field(
-        default=["*"],
-        description="Allowed CORS origins"
+        default=[
+            "http://localhost",
+            "http://127.0.0.1",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080"
+        ],
+        description="Allowed CORS origins for the application (wildcards are disallowed for security)"
     )
     logging_level: str = Field(
         default="INFO",
@@ -95,6 +126,16 @@ class Settings(BaseModel):
                 except Exception:
                     pass
             return [item.strip() for item in v.split(",") if item.strip()]
+        return v
+
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, v: List[str]) -> List[str]:
+        if "*" in v or any(origin.strip() == "*" for origin in v):
+            raise ValueError(
+                "Wildcard '*' origin is not allowed when credentials are enabled for security reasons. "
+                "Configure specific origins instead."
+            )
         return v
 
 
