@@ -120,6 +120,24 @@ Open `frontend/index.html` in your favorite web browser to upload images and fet
 
 ---
 
+## Security & Rate Limiting
+
+The FastAPI backend includes built-in security features to protect prediction endpoints:
+* **Upload Validation**: Protects against large uploads (max 5MB by default) and validates file headers, preventing executables and decompression bombs (max dimensions 4096x4096px).
+* **Rate Limiting**: Protects backend resources using a thread-safe sliding window rate limiter per client IP.
+
+### Configuration Settings
+All limits are configurable via environment variables:
+- `RATE_LIMIT_ENABLED` (Default: `True`): Enable or disable API rate limiting.
+- `RATE_LIMIT_REQUESTS` (Default: `100`): Maximum requests allowed per client IP within the sliding window.
+- `RATE_LIMIT_WINDOW` (Default: `60`): Duration of the rate limit sliding window in seconds.
+- `MAX_UPLOAD_SIZE` (Default: `5242880` bytes / 5MB): Maximum allowed file upload size.
+- `MAX_IMAGE_WIDTH` / `MAX_IMAGE_HEIGHT` (Default: `4096` pixels): Maximum allowed dimensions for uploaded images.
+
+Exceeding the rate limit will return a standard `HTTP 429 Too Many Requests` response containing a `Retry-After` header indicating the number of seconds the client must wait.
+
+---
+
 ## Future Roadmap
 - [ ] **Expand Species Dataset:** Add datasets for Vipers, Pythons, and other common snake species.
 - [ ] **Model Optimizations:** Fine-tune hyperparameters and experiment with larger backbones (e.g., ResNet50) for higher accuracy.

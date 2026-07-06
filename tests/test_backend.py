@@ -512,3 +512,78 @@ def test_validate_image_size_early_rejection_header():
     assert "error" in data
     assert data["error"]["code"] == 413
     assert "exceeds the maximum limit" in data["error"]["message"]
+
+def test_rate_limiting_enforced():
+    """
+    Test that rate limiting blocks requests exceeding the configured limit
+    and returns HTTP 429 with a Retry-After header.
+    """
+    from backend.config import settings
+    from backend.rate_limit import rate_limiter_instance
+    
+    # Enable rate limiting and set threshold to 2 requests
+    settings.rate_limit_enabled = True
+    settings.rate_limit_requests = 2
+    settings.rate_limit_window = 10
+    
+    # Reset state
+    rate_limiter_instance.history.clear()
+    
+    mock_preprocessed = np.zeros((1, 224, 224, 3), dtype=np.float32)
+    mock_raw_predictions = np.array([[0.95, 0.05]], dtype=np.float32)
+    mock_classes = ["cobra", "krait"]
+    
+    with patch("backend.predictor.preprocess_image", return_value=mock_preprocessed), \
+         patch("backend.predictor.predict", return_value=mock_raw_predictions), \
+         patch("backend.model_loader.get_class_names", return_value=mock_classes):
+        
+        files = {"file": ("test.png", DUMMY_PNG_BYTES, "image/png")}
+        
+        # 1st request (allowed)
+        response1 = client.post("/predict", files=files)
+        assert response1.status_code == 200
+        
+        # 2nd request (allowed)
+        response2 = client.post("/predict", files=files)
+        assert response2.status_code == 200
+        
+        # 3rd request (blocked)
+        response3 = client.post("/predict", files=files)
+        assert response3.status_code == 429
+        
+        data = response3.json()
+        assert "error" in data
+        assert data["error"]["code"] == 429
+        assert "Rate limit exceeded" in data["error"]["message"]
+        assert "Retry-After" in response3.headers
+        assert int(response3.headers["Retry-After"]) > 0
+
+def test_rate_limiting_disabled():
+    """
+    Test that rate limiting does not block requests when disabled.
+    """
+    from backend.config import settings
+    from backend.rate_limit import rate_limiter_instance
+    
+    # Disable rate limiting
+    settings.rate_limit_enabled = False
+    settings.rate_limit_requests = 2
+    settings.rate_limit_window = 10
+    
+    # Reset state
+    rate_limiter_instance.history.clear()
+    
+    mock_preprocessed = np.zeros((1, 224, 224, 3), dtype=np.float32)
+    mock_raw_predictions = np.array([[0.95, 0.05]], dtype=np.float32)
+    mock_classes = ["cobra", "krait"]
+    
+    with patch("backend.predictor.preprocess_image", return_value=mock_preprocessed), \
+         patch("backend.predictor.predict", return_value=mock_raw_predictions), \
+         patch("backend.model_loader.get_class_names", return_value=mock_classes):
+        
+        files = {"file": ("test.png", DUMMY_PNG_BYTES, "image/png")}
+        
+        # All 3 requests should be allowed
+        for _ in range(3):
+            response = client.post("/predict", files=files)
+            assert response.status_code == 200

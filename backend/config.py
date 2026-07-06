@@ -45,6 +45,18 @@ class Settings(BaseModel):
         default=4096,
         description="Maximum allowed image height in pixels"
     )
+    rate_limit_enabled: bool = Field(
+        default=True,
+        description="Enable or disable API rate limiting"
+    )
+    rate_limit_requests: int = Field(
+        default=100,
+        description="Number of allowed requests within the rate limit window"
+    )
+    rate_limit_window: int = Field(
+        default=60,
+        description="Rate limit window in seconds"
+    )
     allowed_mime_types: List[str] = Field(
         default=["image/jpeg", "image/png", "image/webp"],
         description="Allowed image MIME types"

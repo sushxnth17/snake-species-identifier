@@ -22,6 +22,7 @@ from backend.metrics import DiagnosticsMetrics, metrics_tracker
 from backend.dependencies import get_settings, get_logger, get_metrics_tracker, get_model, get_class_names
 
 from backend.validation import validate_uploaded_image, read_and_validate_size
+from backend.rate_limit import check_rate_limit_dependency, rate_limiter_cleanup_task
 # Setup Logging
 setup_structured_logging(settings.logging_level)
 logger = logging.getLogger(__name__)
@@ -56,8 +57,26 @@ async def lifespan(app: FastAPI):
                 "startup_duration_seconds": startup_duration
             }
         )
+
+    # Start background cleanup task for rate limiter
+    cleanup_task = None
+    if settings.rate_limit_enabled:
+        import asyncio
+        cleanup_task = asyncio.create_task(
+            rate_limiter_cleanup_task(settings.rate_limit_window)
+        )
+        logger.info("Rate limiter background cleanup task started.", extra={"event": "rate_limit_cleanup_started"})
+
     yield
     # Shutdown logic
+    if cleanup_task is not None:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Rate limiter background cleanup task stopped.", extra={"event": "rate_limit_cleanup_stopped"})
+        
     logger.info("Cleaning up application resources during shutdown lifespan...", extra={"event": "shutdown_cleanup"})
 
 app = FastAPI(
@@ -105,7 +124,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     )
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": {"code": exc.status_code, "message": exc.detail}}
+        content={"error": {"code": exc.status_code, "message": exc.detail}},
+        headers=getattr(exc, "headers", None)
     )
 
 @app.exception_handler(RequestValidationError)
@@ -315,6 +335,7 @@ def get_metrics(
 
 @app.post(
     "/predict",
+    dependencies=[Depends(check_rate_limit_dependency)],
     response_model=PredictionResponse,
     summary="Predict Snake Species from Image",
     description=(
