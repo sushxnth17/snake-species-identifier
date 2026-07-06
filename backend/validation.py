@@ -1,10 +1,70 @@
 import io
 import logging
 from PIL import Image
-from fastapi import HTTPException, UploadFile
+from fastapi import HTTPException, UploadFile, Request
 from backend.config import Settings
 
 logger = logging.getLogger(__name__)
+
+async def read_and_validate_size(file: UploadFile, max_size: int, request: Request = None) -> bytes:
+    """
+    Reads file content from UploadFile in chunks up to max_size.
+    Rejects oversized files early using Content-Length headers,
+    and on-the-fly streaming to prevent memory exhaustion (DoS).
+    """
+    # 1. Early reject based on Content-Length header (if present)
+    content_length = None
+    if request is not None:
+        content_length = request.headers.get("content-length")
+    if content_length is None:
+        content_length = file.headers.get("content-length")
+
+    if content_length is not None:
+        try:
+            cl = int(content_length)
+            if cl > max_size:
+                max_mb = max_size / (1024 * 1024)
+                logger.warning(
+                    f"Rejected upload exceeding maximum size limit via Content-Length: {cl} bytes",
+                    extra={"event": "validation_failed", "detail": "file_too_large"}
+                )
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File size exceeds the maximum limit of {max_mb:.1f}MB."
+                )
+        except ValueError:
+            pass
+
+    # 2. Stream-read in chunks to enforce size limit and prevent memory/disk exhaustion
+    chunks = []
+    total_bytes = 0
+    chunk_size = 64 * 1024  # 64KB chunks
+    
+    try:
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            total_bytes += len(chunk)
+            if total_bytes > max_size:
+                max_mb = max_size / (1024 * 1024)
+                logger.warning(
+                    f"Rejected upload exceeding maximum size limit during streaming: {total_bytes} bytes",
+                    extra={"event": "validation_failed", "detail": "file_too_large"}
+                )
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File size exceeds the maximum limit of {max_mb:.1f}MB."
+                )
+            chunks.append(chunk)
+    finally:
+        # Reset the file pointer for safety
+        try:
+            await file.seek(0)
+        except Exception:
+            pass
+
+    return b"".join(chunks)
 
 def validate_uploaded_image(file: UploadFile, content: bytes, settings: Settings) -> None:
     """
@@ -13,7 +73,8 @@ def validate_uploaded_image(file: UploadFile, content: bytes, settings: Settings
     2. Checks if the file size exceeds configured limits.
     3. Validates MIME type against allowed types.
     4. Validates file signature (magic bytes) to reject renamed executables or unsupported formats.
-    5. Verifies image integrity and structure using Pillow.
+    5. Validates image dimensions against configured maximums.
+    6. Verifies image integrity and structure using Pillow.
     
     Raises HTTPException (400, 413, 415) for validation failures.
     """
@@ -110,8 +171,18 @@ def validate_uploaded_image(file: UploadFile, content: bytes, settings: Settings
 
     # 6. Verify image using Pillow before inference
     try:
-        # Perform structural validation
+        # Perform structural validation and dimension checks
         with Image.open(io.BytesIO(content)) as img:
+            width, height = img.size
+            if width > settings.max_image_width or height > settings.max_image_height:
+                logger.warning(
+                    f"Rejected image exceeding dimension limits: {width}x{height} (Limit: {settings.max_image_width}x{settings.max_image_height})",
+                    extra={"event": "validation_failed", "detail": "dimension_limit_exceeded"}
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Image dimensions ({width}x{height}) exceed maximum allowed limits of {settings.max_image_width}x{settings.max_image_height}."
+                )
             img.verify()
 
         # Perform loading validation to catch corrupted pixel data

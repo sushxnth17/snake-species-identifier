@@ -21,7 +21,7 @@ from backend.metadata import get_snake_metadata
 from backend.metrics import DiagnosticsMetrics, metrics_tracker
 from backend.dependencies import get_settings, get_logger, get_metrics_tracker, get_model, get_class_names
 
-from backend.validation import validate_uploaded_image
+from backend.validation import validate_uploaded_image, read_and_validate_size
 # Setup Logging
 setup_structured_logging(settings.logging_level)
 logger = logging.getLogger(__name__)
@@ -357,6 +357,7 @@ def get_metrics(
     }
 )
 async def predict_species(
+    request: Request,
     file: UploadFile = File(..., description="The binary image of the snake to classify (JPEG, PNG, or WebP format)."),
     settings: Settings = Depends(get_settings),
     logger: logging.Logger = Depends(get_logger),
@@ -370,8 +371,8 @@ async def predict_species(
     """
     start_time = time.perf_counter()
     try:
-        # Read file content into memory
-        image_bytes = await file.read()
+        # Read and validate file size on-the-fly to prevent memory exhaustion
+        image_bytes = await read_and_validate_size(file, settings.max_upload_size, request)
         
         # Validate the uploaded image file using the dedicated validation module
         validate_uploaded_image(file, image_bytes, settings)

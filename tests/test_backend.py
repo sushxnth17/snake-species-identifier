@@ -446,3 +446,69 @@ def test_validate_image_size_exceeded():
     assert "error" in data
     assert data["error"]["code"] == 413
     assert "File size exceeds the maximum limit" in data["error"]["message"]
+
+def test_validate_image_width_exceeded():
+    """
+    Test uploading an image with width exceeding the configured limit.
+    """
+    from PIL import Image
+    import io
+    from backend.config import settings
+    
+    # Generate an image with width larger than settings.max_image_width
+    img = Image.new("RGB", (settings.max_image_width + 1, 10), color="blue")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+    
+    files = {"file": ("wide.png", png_bytes, "image/png")}
+    response = client.post("/predict", files=files)
+    
+    assert response.status_code == 400
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 400
+    assert "exceed maximum allowed limits" in data["error"]["message"]
+
+def test_validate_image_height_exceeded():
+    """
+    Test uploading an image with height exceeding the configured limit.
+    """
+    from PIL import Image
+    import io
+    from backend.config import settings
+    
+    # Generate an image with height larger than settings.max_image_height
+    img = Image.new("RGB", (10, settings.max_image_height + 1), color="blue")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+    
+    files = {"file": ("tall.png", png_bytes, "image/png")}
+    response = client.post("/predict", files=files)
+    
+    assert response.status_code == 400
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 400
+    assert "exceed maximum allowed limits" in data["error"]["message"]
+
+def test_validate_image_size_early_rejection_header():
+    """
+    Test early size rejection using Content-Length header.
+    """
+    from backend.config import settings
+    large_content_length = str(settings.max_upload_size + 1000)
+    files = {"file": ("test.png", DUMMY_PNG_BYTES, "image/png")}
+    
+    response = client.post(
+        "/predict",
+        files=files,
+        headers={"Content-Length": large_content_length}
+    )
+    
+    assert response.status_code == 413
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 413
+    assert "exceeds the maximum limit" in data["error"]["message"]

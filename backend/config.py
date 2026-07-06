@@ -37,6 +37,14 @@ class Settings(BaseModel):
         default=5 * 1024 * 1024,
         description="Maximum allowed upload size in bytes"
     )
+    max_image_width: int = Field(
+        default=4096,
+        description="Maximum allowed image width in pixels"
+    )
+    max_image_height: int = Field(
+        default=4096,
+        description="Maximum allowed image height in pixels"
+    )
     allowed_mime_types: List[str] = Field(
         default=["image/jpeg", "image/png", "image/webp"],
         description="Allowed image MIME types"
