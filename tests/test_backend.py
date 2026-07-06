@@ -209,6 +209,11 @@ def test_config_validation_and_parsing():
         with pytest.raises(ValidationError):
             load_settings()
 
+    # 5. Test wildcard CORS_ORIGINS raises ValidationError
+    with patch.dict(os.environ, {"CORS_ORIGINS": "*"}):
+        with pytest.raises(ValidationError):
+            load_settings()
+
 def test_structured_json_logging():
     """
     Test that StructuredJSONFormatter formats logs as JSON and includes expected fields.

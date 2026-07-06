@@ -133,6 +133,15 @@ All limits are configurable via environment variables:
 - `RATE_LIMIT_WINDOW` (Default: `60`): Duration of the rate limit sliding window in seconds.
 - `MAX_UPLOAD_SIZE` (Default: `5242880` bytes / 5MB): Maximum allowed file upload size.
 - `MAX_IMAGE_WIDTH` / `MAX_IMAGE_HEIGHT` (Default: `4096` pixels): Maximum allowed dimensions for uploaded images.
+- `CORS_ORIGINS` (Default: local development hosts like `http://localhost:3000`): List of allowed origins. Wildcard `*` is rejected to prevent insecure setups.
+
+### Recommended Production CORS Configuration
+For production deployments, do NOT use wildcard configurations (the application validator explicitly blocks `*` for security when credentials are enabled). 
+Configure specific domain names of your frontend application by setting the `CORS_ORIGINS` environment variable:
+```bash
+# Example for production configuration in environment:
+CORS_ORIGINS="https://snake-identifier.yourdomain.com,https://admin.yourdomain.com"
+```
 
 Exceeding the rate limit will return a standard `HTTP 429 Too Many Requests` response containing a `Retry-After` header indicating the number of seconds the client must wait.
 

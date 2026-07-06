@@ -70,8 +70,19 @@ class Settings(BaseModel):
         description="Confidence threshold for snake classification"
     )
     cors_origins: List[str] = Field(
-        default=["*"],
-        description="Allowed CORS origins"
+        default=[
+            "http://localhost",
+            "http://127.0.0.1",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080"
+        ],
+        description="Allowed CORS origins for the application (wildcards are disallowed for security)"
     )
     logging_level: str = Field(
         default="INFO",
@@ -115,6 +126,16 @@ class Settings(BaseModel):
                 except Exception:
                     pass
             return [item.strip() for item in v.split(",") if item.strip()]
+        return v
+
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, v: List[str]) -> List[str]:
+        if "*" in v or any(origin.strip() == "*" for origin in v):
+            raise ValueError(
+                "Wildcard '*' origin is not allowed when credentials are enabled for security reasons. "
+                "Configure specific origins instead."
+            )
         return v
 
 
