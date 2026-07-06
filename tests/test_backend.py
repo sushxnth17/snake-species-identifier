@@ -642,3 +642,23 @@ def test_middleware_abuse_detection_path_scanning():
         assert "error" in data
         assert data["error"]["code"] == 400
         assert "Bad Request" in data["error"]["message"]
+
+def test_prediction_missing_file_field():
+    """
+    Test sending a POST /predict request without the required 'file' parameter.
+    It should return HTTP 422 with a validation error message.
+    """
+    response = client.post("/predict")
+    assert response.status_code == 422
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 422
+    assert "Validation Error" in data["error"]["message"]
+
+def test_prediction_invalid_method():
+    """
+    Test sending a GET request to /predict (which only accepts POST).
+    It should return HTTP 405 Method Not Allowed.
+    """
+    response = client.get("/predict")
+    assert response.status_code == 405
