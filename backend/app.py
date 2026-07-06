@@ -21,6 +21,7 @@ from backend.metadata import get_snake_metadata
 from backend.metrics import DiagnosticsMetrics, metrics_tracker
 from backend.dependencies import get_settings, get_logger, get_metrics_tracker, get_model, get_class_names
 
+from backend.validation import validate_uploaded_image
 # Setup Logging
 setup_structured_logging(settings.logging_level)
 logger = logging.getLogger(__name__)
@@ -369,39 +370,11 @@ async def predict_species(
     """
     start_time = time.perf_counter()
     try:
-        # 1. Validate MIME type first (quick check on headers)
-        if file.content_type not in settings.allowed_mime_types:
-            logger.warning(
-                f"Rejected upload with unsupported MIME type: {file.content_type}",
-                extra={"event": "validation_failed", "detail": "unsupported_mime_type"}
-            )
-            raise HTTPException(
-                status_code=415,
-                detail=f"Unsupported media type: '{file.content_type}'. Allowed types: {', '.join(settings.allowed_mime_types)}"
-            )
-            
         # Read file content into memory
         image_bytes = await file.read()
         
-        # 2. Validate file existence
-        if not image_bytes or len(image_bytes) == 0:
-            logger.warning(
-                "Rejected upload with empty file content.",
-                extra={"event": "validation_failed", "detail": "empty_file"}
-            )
-            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-            
-        # 3. Validate maximum upload size
-        if len(image_bytes) > settings.max_upload_size:
-            max_mb = settings.max_upload_size / (1024 * 1024)
-            logger.warning(
-                f"Rejected upload exceeding maximum size limit: {len(image_bytes)} bytes",
-                extra={"event": "validation_failed", "detail": "file_too_large"}
-            )
-            raise HTTPException(
-                status_code=413,
-                detail=f"File size exceeds the maximum limit of {max_mb:.1f}MB."
-            )
+        # Validate the uploaded image file using the dedicated validation module
+        validate_uploaded_image(file, image_bytes, settings)
             
         # 4. Preprocess image
         preprocess_start = time.perf_counter()
