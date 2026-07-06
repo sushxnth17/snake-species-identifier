@@ -23,6 +23,7 @@ from backend.dependencies import get_settings, get_logger, get_metrics_tracker, 
 
 from backend.validation import validate_uploaded_image, read_and_validate_size
 from backend.rate_limit import check_rate_limit_dependency, rate_limiter_cleanup_task
+from backend.middleware import SecurityAndLoggingMiddleware
 # Setup Logging
 setup_structured_logging(settings.logging_level)
 logger = logging.getLogger(__name__)
@@ -96,17 +97,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Request ID & Logging Middleware
-@app.middleware("http")
-async def add_request_id_and_log(request: Request, call_next):
-    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-    token = request_id_var.set(request_id)
-    try:
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
-    finally:
-        request_id_var.reset(token)
+# Security, Logging, and Abuse Detection Middleware
+app.add_middleware(SecurityAndLoggingMiddleware)
 
 
 # --- Global Exception Handlers ---

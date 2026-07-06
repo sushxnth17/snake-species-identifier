@@ -592,3 +592,53 @@ def test_rate_limiting_disabled():
         for _ in range(3):
             response = client.post("/predict", files=files)
             assert response.status_code == 200
+
+def test_middleware_security_headers():
+    """
+    Test that standard security headers are applied to HTTP responses.
+    """
+    response = client.get("/health")
+    assert response.status_code == 200
+    headers = response.headers
+    
+    assert headers["X-Frame-Options"] == "DENY"
+    assert headers["X-Content-Type-Options"] == "nosniff"
+    assert headers["X-XSS-Protection"] == "1; mode=block"
+    assert headers["Referrer-Policy"] == "no-referrer-when-downgrade"
+    assert "default-src 'self'" in headers["Content-Security-Policy"]
+    assert "Strict-Transport-Security" in headers
+    assert "X-Request-ID" in headers
+
+def test_middleware_abuse_detection_uri_too_long():
+    """
+    Test that requests with excessively long URIs (> 2048 characters) are blocked with HTTP 414.
+    """
+    long_query = "a" * 2100
+    response = client.get(f"/health?query={long_query}")
+    
+    assert response.status_code == 414
+    data = response.json()
+    assert "error" in data
+    assert data["error"]["code"] == 414
+    assert "URI Too Long" in data["error"]["message"]
+
+def test_middleware_abuse_detection_path_scanning():
+    """
+    Test that requests probing for sensitive folders/files (e.g. .git, .env, .php)
+    are blocked with HTTP 400 Bad Request.
+    """
+    blocked_paths = [
+        "/health/.git/config",
+        "/wp-admin",
+        "/eval-stdin.php",
+        "/.env",
+        "/phpmyadmin"
+    ]
+    
+    for path in blocked_paths:
+        response = client.get(path)
+        assert response.status_code == 400
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["code"] == 400
+        assert "Bad Request" in data["error"]["message"]
