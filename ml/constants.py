@@ -42,3 +42,11 @@ RANDOM_ROTATION_FACTOR: float = 0.15
 RANDOM_ZOOM_FACTOR: float = 0.15
 RANDOM_CONTRAST_FACTOR: float = 0.15
 
+# Transfer Learning Configurations
+INITIAL_LEARNING_RATE: float = 1e-3
+FINE_TUNE: bool = True
+FINE_TUNE_START_LAYER: str = "block_15_expand"
+FINE_TUNE_LEARNING_RATE: float = 1e-5
+FINE_TUNE_EPOCHS: int = 5
+
+

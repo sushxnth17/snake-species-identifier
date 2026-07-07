@@ -20,7 +20,9 @@ from ml.constants import (
     DROPOUT_RATE, DENSE_UNITS, EARLY_STOPPING_PATIENCE, REDUCE_LR_FACTOR,
     REDUCE_LR_PATIENCE, REDUCE_LR_MIN, DEFAULT_FIG_SIZE, PLOT_DPI,
     USE_AUGMENTATION, RANDOM_FLIP_MODE, RANDOM_ROTATION_FACTOR,
-    RANDOM_ZOOM_FACTOR, RANDOM_CONTRAST_FACTOR
+    RANDOM_ZOOM_FACTOR, RANDOM_CONTRAST_FACTOR,
+    INITIAL_LEARNING_RATE, FINE_TUNE, FINE_TUNE_START_LAYER,
+    FINE_TUNE_LEARNING_RATE, FINE_TUNE_EPOCHS
 )
 from ml.dataset import load_and_preprocess_dataset
 
@@ -111,33 +113,51 @@ def train_model(
     model: tf.keras.Model, 
     train_ds: tf.data.Dataset, 
     val_ds: tf.data.Dataset, 
-    epochs: int = EPOCHS
+    epochs: int = EPOCHS,
+    initial_learning_rate: float = INITIAL_LEARNING_RATE,
+    fine_tune: bool = FINE_TUNE,
+    fine_tune_start_layer: str = FINE_TUNE_START_LAYER,
+    fine_tune_learning_rate: float = FINE_TUNE_LEARNING_RATE,
+    fine_tune_epochs: int = FINE_TUNE_EPOCHS
 ) -> tf.keras.callbacks.History:
     """
     Compiles and trains the tf.keras Model.
 
     Saves the best model checkpoints based on validation loss, and utilizes
     early stopping and learning rate reduction strategies.
+    Supports a two-stage training approach:
+      Stage 1: Train the custom classification head with the base model fully frozen.
+      Stage 2: Unfreeze the final convolutional blocks of the base model and fine-tune
+               with a lower learning rate.
 
     Args:
         model: The uncompiled tf.keras Model.
         train_ds: Training dataset.
         val_ds: Validation dataset.
-        epochs: Number of epochs to train.
+        epochs: Number of epochs to train the classification head in Stage 1.
+        initial_learning_rate: Optimizer learning rate for Stage 1.
+        fine_tune: Whether to perform Stage 2 fine-tuning.
+        fine_tune_start_layer: Layer name in MobileNetV2 from which layers will be unfrozen.
+        fine_tune_learning_rate: Lower learning rate for Stage 2 fine-tuning.
+        fine_tune_epochs: Additional epochs to train during Stage 2.
 
     Returns:
-        The History object returned by model.fit().
+        The History object representing the combined training history across both stages.
     """
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
+    # Stage 1: Compile model to train the custom classification head
+    # We compile the model with the initial learning rate (typically 1e-3)
+    print("Stage 1: Compiling model to train the custom classification head...")
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=initial_learning_rate),
         loss=tf.keras.losses.SparseCategoricalCrossentropy(),
         metrics=["accuracy"]
     )
 
     checkpoint_filepath = os.path.join(CHECKPOINT_DIR, "best_snake_model.keras")
     
+    # Callbacks are defined here and reused across both stages to preserve state
     callbacks = [
         tf.keras.callbacks.EarlyStopping(
             monitor="val_loss",
@@ -160,7 +180,7 @@ def train_model(
         )
     ]
 
-    print(f"Starting training for {epochs} epochs...")
+    print(f"Starting Stage 1 training for {epochs} epochs...")
     history = model.fit(
         train_ds,
         validation_data=val_ds,
@@ -168,6 +188,66 @@ def train_model(
         callbacks=callbacks,
         verbose=1
     )
+
+    # Stage 2: Fine-Tuning the final convolutional blocks
+    if fine_tune:
+        # Locate the base model inside the functional architecture layers
+        base_model = None
+        for layer in model.layers:
+            if "mobilenet" in layer.name or isinstance(layer, tf.keras.Model):
+                base_model = layer
+                break
+                
+        if base_model is not None:
+            print("\nStage 2: Fine-tuning - Unfreezing final convolutional blocks...")
+            
+            # Set entire base model to trainable first
+            base_model.trainable = True
+            
+            # Freeze early layers, unfreeze final blocks starting from fine_tune_start_layer
+            unfreeze = False
+            unfrozen_count = 0
+            for layer in base_model.layers:
+                if layer.name == fine_tune_start_layer:
+                    unfreeze = True
+                
+                # Keep BatchNormalization layers frozen (training=False) even when base_model.trainable is True.
+                # In build_model(), we did: `x = base_model(x, training=False)`.
+                # This ensures BN layers stay in inference mode during fine-tuning (Keras best practice).
+                if unfreeze:
+                    layer.trainable = True
+                    unfrozen_count += 1
+                else:
+                    layer.trainable = False
+            
+            print(f"Unfrozen {unfrozen_count} layers of the base model starting from '{fine_tune_start_layer}'.")
+            
+            # Recompile model with a lower learning rate for fine-tuning stability
+            print(f"Stage 2: Recompiling model with a lower learning rate ({fine_tune_learning_rate})...")
+            model.compile(
+                optimizer=tf.keras.optimizers.Adam(learning_rate=fine_tune_learning_rate),
+                loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+                metrics=["accuracy"]
+            )
+            
+            # Resume training starting from the final epoch of Stage 1
+            initial_epoch = len(history.history["loss"])
+            total_fine_tune_epochs = initial_epoch + fine_tune_epochs
+            
+            print(f"Resuming training from epoch {initial_epoch + 1} to {total_fine_tune_epochs}...")
+            history_fine = model.fit(
+                train_ds,
+                validation_data=val_ds,
+                epochs=total_fine_tune_epochs,
+                initial_epoch=initial_epoch,
+                callbacks=callbacks,
+                verbose=1
+            )
+            
+            # Combine Phase 1 and Phase 2 history metrics for seamless reporting/plotting
+            for key in history.history:
+                if key in history_fine.history:
+                    history.history[key].extend(history_fine.history[key])
 
     return history
 
@@ -310,7 +390,17 @@ def main():
     model.summary()
 
     # Train the model (callbacks and compilation are handled inside train_model)
-    history = train_model(model, train_ds, val_ds, epochs=EPOCHS)
+    history = train_model(
+        model=model, 
+        train_ds=train_ds, 
+        val_ds=val_ds, 
+        epochs=EPOCHS,
+        initial_learning_rate=INITIAL_LEARNING_RATE,
+        fine_tune=FINE_TUNE,
+        fine_tune_start_layer=FINE_TUNE_START_LAYER,
+        fine_tune_learning_rate=FINE_TUNE_LEARNING_RATE,
+        fine_tune_epochs=FINE_TUNE_EPOCHS
+    )
 
     # Ensure models directory exists
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
