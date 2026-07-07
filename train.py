@@ -231,6 +231,32 @@ def generate_report(history: tf.keras.callbacks.History, save_dir: str = CHECKPO
 
 
 def main():
+    # Verify dataset integrity and produce summary before training
+    from ml.dataset_validator import DatasetValidator
+    import sys
+
+    print("Verifying dataset integrity before training...")
+    validator = DatasetValidator(DATA_DIR)
+    try:
+        results = validator.validate()
+        validator.print_summary(results)
+
+        # Halt training on critical integrity errors (corrupted images or empty class folders)
+        if results["corrupted_images"]:
+            print(f"\n[ERROR] Dataset verification failed: {len(results['corrupted_images'])} corrupted image(s) detected.")
+            print("Please clean or remove corrupted files before training. Aborting training run.")
+            sys.exit(1)
+
+        if results["empty_folders"] or results["no_valid_images_folders"]:
+            print("\n[ERROR] Dataset verification failed: One or more class folders are empty or contain 0 valid images.")
+            print("Aborting training run.")
+            sys.exit(1)
+            
+    except Exception as e:
+        print(f"\n[ERROR] Failed to run dataset validation: {e}")
+        print("Aborting training run.")
+        sys.exit(1)
+
     # Load, preprocess and optimize datasets using the centralized pipeline
     train_ds, val_ds, class_names = load_and_preprocess_dataset(
         data_dir=DATA_DIR,
