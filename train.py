@@ -4,6 +4,7 @@ This module handles loading, splitting, preprocessing, caching, and prefetching 
 as well as building, training, and generating post-training metrics and persistence artifacts.
 """
 
+import argparse
 import json
 import os
 from typing import Tuple
@@ -109,6 +110,54 @@ def build_model(
     return model
 
 
+def parse_arguments() -> argparse.Namespace:
+    """
+    Parses command-line arguments for training configurations.
+    """
+    parser = argparse.ArgumentParser(description="Train the Snake Species Identifier model.")
+    parser.add_argument(
+        "--data_dir", type=str, default=DATA_DIR,
+        help="Path to the dataset directory."
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=EPOCHS,
+        help="Number of initial training epochs for Stage 1."
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=BATCH_SIZE,
+        help="Training batch size."
+    )
+    parser.add_argument(
+        "--learning_rate", "--lr", type=float, default=INITIAL_LEARNING_RATE,
+        help="Initial learning rate for classification head in Stage 1."
+    )
+    parser.add_argument(
+        "--patience", type=int, default=EARLY_STOPPING_PATIENCE,
+        help="Patience epochs for EarlyStopping."
+    )
+    parser.add_argument(
+        "--optimizer", type=str, default="adam", choices=["adam", "sgd", "rmsprop"],
+        help="Optimizer type to use."
+    )
+    parser.add_argument(
+        "--fine_tune", type=bool, default=FINE_TUNE,
+        help="Enable fine-tuning Stage 2."
+    )
+    parser.add_argument(
+        "--fine_tune_epochs", type=int, default=FINE_TUNE_EPOCHS,
+        help="Fine-tuning epochs for Stage 2."
+    )
+    parser.add_argument(
+        "--fine_tune_lr", type=float, default=FINE_TUNE_LEARNING_RATE,
+        help="Fine-tuning learning rate."
+    )
+    parser.add_argument(
+        "--checkpoint_dir", type=str, default=CHECKPOINT_DIR,
+        help="Directory to save checkpoints and metrics."
+    )
+    return parser.parse_args()
+
+
 def train_model(
     model: tf.keras.Model, 
     train_ds: tf.data.Dataset, 
@@ -118,7 +167,10 @@ def train_model(
     fine_tune: bool = FINE_TUNE,
     fine_tune_start_layer: str = FINE_TUNE_START_LAYER,
     fine_tune_learning_rate: float = FINE_TUNE_LEARNING_RATE,
-    fine_tune_epochs: int = FINE_TUNE_EPOCHS
+    fine_tune_epochs: int = FINE_TUNE_EPOCHS,
+    optimizer_name: str = "adam",
+    patience: int = EARLY_STOPPING_PATIENCE,
+    checkpoint_dir: str = CHECKPOINT_DIR
 ) -> tf.keras.callbacks.History:
     """
     Compiles and trains the tf.keras Model.
@@ -140,28 +192,49 @@ def train_model(
         fine_tune_start_layer: Layer name in MobileNetV2 from which layers will be unfrozen.
         fine_tune_learning_rate: Lower learning rate for Stage 2 fine-tuning.
         fine_tune_epochs: Additional epochs to train during Stage 2.
+        optimizer_name: Name of Keras optimizer to use ("adam", "sgd", "rmsprop").
+        patience: Epochs of patience before early stopping triggers.
+        checkpoint_dir: Directory where model checkpoints and logs are saved.
 
     Returns:
         The History object representing the combined training history across both stages.
     """
-    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    # Helper function to instantiate Keras optimizer based on selections
+    def get_optimizer(name: str, lr: float) -> tf.keras.optimizers.Optimizer:
+        name = name.lower()
+        if name == "adam":
+            # Adam optimizer (standard for general CNN classification)
+            return tf.keras.optimizers.Adam(learning_rate=lr)
+        elif name == "sgd":
+            # SGD with momentum and nesterov acceleration
+            return tf.keras.optimizers.SGD(learning_rate=lr, momentum=0.9, nesterov=True)
+        elif name == "rmsprop":
+            # RMSprop optimizer
+            return tf.keras.optimizers.RMSprop(learning_rate=lr)
+        else:
+            raise ValueError(f"Unsupported optimizer type: {name}")
 
     # Stage 1: Compile model to train the custom classification head
-    # We compile the model with the initial learning rate (typically 1e-3)
-    print("Stage 1: Compiling model to train the custom classification head...")
+    print("\n" + "=" * 60)
+    print("      STAGE 1: TRAINING CUSTOM CLASSIFICATION HEAD      ")
+    print("=" * 60)
+    
+    opt_stage1 = get_optimizer(optimizer_name, initial_learning_rate)
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=initial_learning_rate),
+        optimizer=opt_stage1,
         loss=tf.keras.losses.SparseCategoricalCrossentropy(),
         metrics=["accuracy"]
     )
 
-    checkpoint_filepath = os.path.join(CHECKPOINT_DIR, "best_snake_model.keras")
+    checkpoint_filepath = os.path.join(checkpoint_dir, "best_snake_model.keras")
     
-    # Callbacks are defined here and reused across both stages to preserve state
+    # Define training callbacks (with dynamic patience overrides and TensorBoard monitoring)
     callbacks = [
         tf.keras.callbacks.EarlyStopping(
             monitor="val_loss",
-            patience=EARLY_STOPPING_PATIENCE,
+            patience=patience,
             restore_best_weights=True,
             verbose=1
         ),
@@ -174,9 +247,14 @@ def train_model(
         tf.keras.callbacks.ReduceLROnPlateau(
             monitor="val_loss",
             factor=REDUCE_LR_FACTOR,
-            patience=REDUCE_LR_PATIENCE,
+            # Plateau patience scales dynamically to match early stopping patience settings
+            patience=max(1, patience // 2),
             min_lr=REDUCE_LR_MIN,
             verbose=1
+        ),
+        tf.keras.callbacks.TensorBoard(
+            log_dir=os.path.join(checkpoint_dir, "logs"),
+            histogram_freq=1
         )
     ]
 
@@ -199,7 +277,9 @@ def train_model(
                 break
                 
         if base_model is not None:
-            print("\nStage 2: Fine-tuning - Unfreezing final convolutional blocks...")
+            print("\n" + "=" * 60)
+            print("      STAGE 2: FINE-TUNING FINAL CONVOLUTIONAL BLOCKS   ")
+            print("=" * 60)
             
             # Set entire base model to trainable first
             base_model.trainable = True
@@ -223,9 +303,10 @@ def train_model(
             print(f"Unfrozen {unfrozen_count} layers of the base model starting from '{fine_tune_start_layer}'.")
             
             # Recompile model with a lower learning rate for fine-tuning stability
-            print(f"Stage 2: Recompiling model with a lower learning rate ({fine_tune_learning_rate})...")
+            opt_stage2 = get_optimizer(optimizer_name, fine_tune_learning_rate)
+            print(f"Stage 2: Recompiling model with optimizer {optimizer_name.upper()} and lower learning rate ({fine_tune_learning_rate})...")
             model.compile(
-                optimizer=tf.keras.optimizers.Adam(learning_rate=fine_tune_learning_rate),
+                optimizer=opt_stage2,
                 loss=tf.keras.losses.SparseCategoricalCrossentropy(),
                 metrics=["accuracy"]
             )
@@ -373,11 +454,59 @@ def main():
         print("Aborting training run.")
         sys.exit(1)
 
+def main():
+    # 0. Parse command-line configurations
+    args = parse_arguments()
+
+    # 1. Verify dataset integrity and produce summary before training
+    from ml.dataset_validator import DatasetValidator
+    import sys
+
+    print("Verifying dataset integrity before training...")
+    validator = DatasetValidator(args.data_dir)
+    try:
+        results = validator.validate()
+        validator.print_summary(results)
+
+        # Halt training on critical integrity errors (corrupted images or empty class folders)
+        if results["corrupted_images"]:
+            print(f"\n[ERROR] Dataset verification failed: {len(results['corrupted_images'])} corrupted image(s) detected.")
+            print("Please clean or remove corrupted files before training. Aborting training run.")
+            sys.exit(1)
+
+        if results["empty_folders"] or results["no_valid_images_folders"]:
+            print("\n[ERROR] Dataset verification failed: One or more class folders are empty or contain 0 valid images.")
+            print("Aborting training run.")
+            sys.exit(1)
+            
+    except Exception as e:
+        print(f"\n[ERROR] Failed to run dataset validation: {e}")
+        print("Aborting training run.")
+        sys.exit(1)
+
+    # Print the training pipeline configurations to the console
+    print("\n" + "=" * 60)
+    print("                TRAINING PIPELINE CONFIGURATION                ")
+    print("=" * 60)
+    print(f"Dataset Directory:       {args.data_dir}")
+    print(f"Batch Size:              {args.batch_size}")
+    print(f"Optimizer Type:          {args.optimizer.upper()}")
+    print(f"Stage 1 Epochs:          {args.epochs}")
+    print(f"Stage 1 Learning Rate:   {args.learning_rate}")
+    print(f"Early Stopping Patience: {args.patience}")
+    print(f"Stage 2 Fine-Tuning:     {args.fine_tune}")
+    if args.fine_tune:
+        print(f"  - Start Layer:         {FINE_TUNE_START_LAYER}")
+        print(f"  - Stage 2 Epochs:       {args.fine_tune_epochs}")
+        print(f"  - Stage 2 Learning Rate:{args.fine_tune_lr}")
+    print(f"Checkpoint Directory:    {args.checkpoint_dir}")
+    print("=" * 60 + "\n")
+
     # Load, preprocess and optimize datasets using the centralized pipeline
     train_ds, val_ds, class_names = load_and_preprocess_dataset(
-        data_dir=DATA_DIR,
+        data_dir=args.data_dir,
         image_size=IMAGE_SIZE,
-        batch_size=BATCH_SIZE,
+        batch_size=args.batch_size,
         validation_split=VALIDATION_SPLIT,
         seed=RANDOM_SEED
     )
@@ -394,30 +523,33 @@ def main():
         model=model, 
         train_ds=train_ds, 
         val_ds=val_ds, 
-        epochs=EPOCHS,
-        initial_learning_rate=INITIAL_LEARNING_RATE,
-        fine_tune=FINE_TUNE,
+        epochs=args.epochs,
+        initial_learning_rate=args.learning_rate,
+        fine_tune=args.fine_tune,
         fine_tune_start_layer=FINE_TUNE_START_LAYER,
-        fine_tune_learning_rate=FINE_TUNE_LEARNING_RATE,
-        fine_tune_epochs=FINE_TUNE_EPOCHS
+        fine_tune_learning_rate=args.fine_tune_lr,
+        fine_tune_epochs=args.fine_tune_epochs,
+        optimizer_name=args.optimizer,
+        patience=args.patience,
+        checkpoint_dir=args.checkpoint_dir
     )
 
-    # Ensure models directory exists
-    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+    # Ensure checkpoint directory exists
+    os.makedirs(args.checkpoint_dir, exist_ok=True)
 
     # Save the final model (with best weights restored by EarlyStopping callback)
-    model_save_path = os.path.join(CHECKPOINT_DIR, f"{MODEL_NAME}.keras")
+    model_save_path = os.path.join(args.checkpoint_dir, f"{MODEL_NAME}.keras")
     model.save(model_save_path)
     print(f"Model saved to {model_save_path}")
 
     # Save class names metadata for the backend
-    class_names_path = os.path.join(CHECKPOINT_DIR, "class_names.json")
+    class_names_path = os.path.join(args.checkpoint_dir, "class_names.json")
     with open(class_names_path, "w", encoding="utf-8") as f:
         json.dump(class_names, f, indent=4)
     print(f"Class names saved to {class_names_path}")
 
     # Generate post-training reports (metrics display, loss and accuracy charts, history json)
-    generate_report(history, CHECKPOINT_DIR)
+    generate_report(history, args.checkpoint_dir)
 
 
 if __name__ == "__main__":
