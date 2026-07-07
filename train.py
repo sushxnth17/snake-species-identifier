@@ -18,7 +18,9 @@ import tensorflow as tf
 from ml.constants import (
     IMAGE_SIZE, BATCH_SIZE, RANDOM_SEED, VALIDATION_SPLIT, MODEL_NAME,
     DROPOUT_RATE, DENSE_UNITS, EARLY_STOPPING_PATIENCE, REDUCE_LR_FACTOR,
-    REDUCE_LR_PATIENCE, REDUCE_LR_MIN, DEFAULT_FIG_SIZE, PLOT_DPI
+    REDUCE_LR_PATIENCE, REDUCE_LR_MIN, DEFAULT_FIG_SIZE, PLOT_DPI,
+    USE_AUGMENTATION, RANDOM_FLIP_MODE, RANDOM_ROTATION_FACTOR,
+    RANDOM_ZOOM_FACTOR, RANDOM_CONTRAST_FACTOR
 )
 from ml.dataset import load_and_preprocess_dataset
 
@@ -28,12 +30,21 @@ EPOCHS: int = 10
 CHECKPOINT_DIR: str = "models"
 
 
-def build_model(num_classes: int, input_shape: Tuple[int, int, int] = (224, 224, 3)) -> tf.keras.Model:
+def build_model(
+    num_classes: int, 
+    input_shape: Tuple[int, int, int] = (224, 224, 3),
+    augment: bool = USE_AUGMENTATION,
+    flip_mode: str = RANDOM_FLIP_MODE,
+    rotation_factor: float = RANDOM_ROTATION_FACTOR,
+    zoom_factor: float = RANDOM_ZOOM_FACTOR,
+    contrast_factor: float = RANDOM_CONTRAST_FACTOR
+) -> tf.keras.Model:
     """
     Builds a snake species classification model using the tf.keras Functional API.
 
     This architecture uses a MobileNetV2 backbone pretrained on ImageNet as a feature extractor.
-    All base model layers are frozen. A custom classification head is appended, containing:
+    All base model layers are frozen. Optional Keras data augmentation layers are prepended.
+    A custom classification head is appended, containing:
     1. GlobalAveragePooling2D to reduce feature maps to a single vector per image.
     2. Dropout to prevent overfitting during training.
     3. Dense layer for representation learning.
@@ -42,11 +53,36 @@ def build_model(num_classes: int, input_shape: Tuple[int, int, int] = (224, 224,
     Args:
         num_classes: Number of output target classes.
         input_shape: The (height, width, channels) dimensions of the input images.
+        augment: Whether to apply training data augmentation layers.
+        flip_mode: Flip mode for RandomFlip layer.
+        rotation_factor: Rotation factor for RandomRotation layer.
+        zoom_factor: Zoom factor for RandomZoom layer.
+        contrast_factor: Contrast factor for RandomContrast layer.
 
     Returns:
         An uncompiled tf.keras.Model instance.
     """
     inputs = tf.keras.Input(shape=input_shape, name="input_image")
+
+    # Apply data augmentation if enabled (active only during model training)
+    if augment:
+        # tf.keras.layers.RandomFlip: Randomly flips the input images horizontally and/or vertically.
+        # This helps the model generalize to different orientations of the snake.
+        x = tf.keras.layers.RandomFlip(flip_mode, seed=RANDOM_SEED, name="augment_flip")(inputs)
+        
+        # tf.keras.layers.RandomRotation: Randomly rotates the images by a fraction of 2*pi.
+        # This increases rotation invariance for pictures taken from different angles.
+        x = tf.keras.layers.RandomRotation(rotation_factor, seed=RANDOM_SEED, name="augment_rotation")(x)
+        
+        # tf.keras.layers.RandomZoom: Randomly zooms in or out of the images by the specified factor.
+        # This helps the model identify features at varying scales or distances.
+        x = tf.keras.layers.RandomZoom(zoom_factor, seed=RANDOM_SEED, name="augment_zoom")(x)
+        
+        # tf.keras.layers.RandomContrast: Randomly adjusts the contrast of the input images.
+        # This improves robustness against lighting differences and shadow conditions.
+        x = tf.keras.layers.RandomContrast(contrast_factor, seed=RANDOM_SEED, name="augment_contrast")(x)
+    else:
+        x = inputs
 
     # Base model: Pretrained MobileNetV2, excluding top classification layers
     base_model = tf.keras.applications.MobileNetV2(
@@ -59,7 +95,7 @@ def build_model(num_classes: int, input_shape: Tuple[int, int, int] = (224, 224,
     base_model.trainable = False
 
     # Inference mode execution ensures BatchNormalization layer statistics remain frozen
-    x = base_model(inputs, training=False)
+    x = base_model(x, training=False)
 
     # Custom classification head
     x = tf.keras.layers.GlobalAveragePooling2D(name="global_average_pooling")(x)

@@ -34,3 +34,11 @@ PLOT_DPI: int = 150
 # Inference configurations
 CONFIDENCE_THRESHOLD: float = 0.60
 TOP_K_PREDICTIONS: int = 3
+
+# Data Augmentation Configurations
+USE_AUGMENTATION: bool = True
+RANDOM_FLIP_MODE: str = "horizontal_and_vertical"
+RANDOM_ROTATION_FACTOR: float = 0.15
+RANDOM_ZOOM_FACTOR: float = 0.15
+RANDOM_CONTRAST_FACTOR: float = 0.15
+
