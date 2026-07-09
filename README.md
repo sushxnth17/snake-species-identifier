@@ -1,4 +1,4 @@
-# 🐍 AI Snake Identifier
+#  AI Snake species Identifier
 
 An AI-powered web application that identifies snake species from uploaded images, classifies them, and provides essential safety information (e.g., distinguishing between venomous and non-venomous species).
 
