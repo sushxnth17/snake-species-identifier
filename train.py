@@ -619,6 +619,12 @@ def main():
     try:
         shutil.copy(model_save_path, os.path.join(args.checkpoint_dir, f"{MODEL_NAME}.keras"))
         shutil.copy(class_names_path, os.path.join(args.checkpoint_dir, "class_names.json"))
+        
+        # Mirror calibration info if exists
+        version_cal_path = os.path.join(version_dir, "calibration_info.json")
+        if os.path.exists(version_cal_path):
+            shutil.copy(version_cal_path, os.path.join(args.checkpoint_dir, "calibration_info.json"))
+            
         print(f"Successfully mirrored latest model and metadata to base: {args.checkpoint_dir}")
     except Exception as e:
         print(f"[WARNING] Could not mirror model to base directory: {e}")

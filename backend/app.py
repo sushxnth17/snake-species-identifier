@@ -19,7 +19,7 @@ from backend import model_loader
 from backend import predictor
 from backend.metadata import get_snake_metadata
 from backend.metrics import DiagnosticsMetrics, metrics_tracker
-from backend.dependencies import get_settings, get_logger, get_metrics_tracker, get_model, get_class_names
+from backend.dependencies import get_settings, get_logger, get_metrics_tracker, get_model, get_class_names, get_calibrator
 
 from backend.validation import validate_uploaded_image, read_and_validate_size
 from backend.rate_limit import check_rate_limit_dependency, rate_limiter_cleanup_task
@@ -39,6 +39,9 @@ async def lifespan(app: FastAPI):
         
         model_loader.load_class_names()
         logger.info("Class names loaded successfully.", extra={"event": "class_names_loaded", "class_names_path": settings.class_names_path})
+        
+        model_loader.load_calibration()
+        logger.info("Calibration info loaded successfully.", extra={"event": "calibration_loaded", "calibration_path": settings.calibration_info_path})
         
         startup_duration = time.perf_counter() - start_time
         logger.info(
@@ -376,7 +379,8 @@ async def predict_species(
     logger: logging.Logger = Depends(get_logger),
     metrics: DiagnosticsMetrics = Depends(get_metrics_tracker),
     model: tf.keras.Model = Depends(get_model),
-    class_names: List[str] = Depends(get_class_names)
+    class_names: List[str] = Depends(get_class_names),
+    calibrator = Depends(get_calibrator)
 ):
     """
     Accepts an uploaded image of a snake and predicts its species.
@@ -403,6 +407,9 @@ async def predict_species(
         # 6. Extract predicted class and confidence
         predicted_species, confidence = predictor.format_prediction_results(raw_predictions, class_names)
         
+        # Classify prediction confidence level using calibrator
+        confidence_level = calibrator.classify_confidence(confidence)
+        
         # 7. Retrieve Safety and Taxonomic Metadata
         metadata_start = time.perf_counter()
         meta_dict = get_snake_metadata(predicted_species)
@@ -421,13 +428,14 @@ async def predict_species(
         
         # Log structured prediction request details
         logger.info(
-            f"Prediction completed for {file.filename}: {predicted_species} ({confidence:.4f})",
+            f"Prediction completed for {file.filename}: {predicted_species} ({confidence:.4f}, {confidence_level})",
             extra={
                 "event": "prediction_request",
                 "uploaded_filename": file.filename,
                 "file_size_bytes": len(image_bytes),
                 "prediction": predicted_species,
                 "confidence": confidence,
+                "confidence_level": confidence_level,
                 "preprocessing_time_ms": preprocess_time_ms,
                 "inference_time_ms": inference_time_ms,
                 "metadata_lookup_time_ms": metadata_lookup_time_ms,
@@ -438,6 +446,7 @@ async def predict_species(
         return PredictionResponse(
             species=predicted_species,
             confidence=confidence,
+            confidence_level=confidence_level,
             metadata=meta_dict,
             inference_time_ms=inference_time_ms
         )

@@ -244,6 +244,33 @@ def evaluate_model(
     print(report_text)
     print("=" * 60 + "\n")
 
+    # 5b. Compute Confidence Calibration Info
+    print("Computing confidence calibration statistics...")
+    from ml.calibration import ConfidenceCalibrator
+    calibrator = ConfidenceCalibrator()
+    cal_stats = calibrator.fit(y_true, y_prob)
+    
+    # Save calibration information
+    calibration_path = os.path.join(save_dir, "calibration_info.json")
+    calibrator.save(calibration_path)
+    print(f"Saved calibration information to: {calibration_path}")
+    
+    # Print calibration report
+    print("\n" + "=" * 60)
+    print("              CONFIDENCE CALIBRATION REPORT                ")
+    print("=" * 60)
+    print(f"Expected Calibration Error (ECE): {cal_stats['ece']:.4f}")
+    print(f"Overall Accuracy:                  {cal_stats['overall_accuracy']:.4f}")
+    print("-" * 60)
+    print("Confidence Distributions:")
+    print(f"  Correct Predictions:   Count={cal_stats['correct_predictions']['count']}, Mean Conf={cal_stats['correct_predictions']['mean_confidence']:.4f}, Median Conf={cal_stats['correct_predictions']['median_confidence']:.4f}")
+    print(f"  Incorrect Predictions: Count={cal_stats['incorrect_predictions']['count']}, Mean Conf={cal_stats['incorrect_predictions']['mean_confidence']:.4f}, Median Conf={cal_stats['incorrect_predictions']['median_confidence']:.4f}")
+    print("-" * 60)
+    print("Recommended Confidence Thresholds:")
+    print(f"  High Confidence Threshold:   {cal_stats['recommended_thresholds']['high']:.4f} (Target Accuracy: {cal_stats['targets']['high_accuracy']:.2f})")
+    print(f"  Medium Confidence Threshold: {cal_stats['recommended_thresholds']['medium']:.4f} (Target Accuracy: {cal_stats['targets']['medium_accuracy']:.2f})")
+    print("=" * 60 + "\n")
+
     # 6. Save metrics to evaluation_report.json
     metrics_report = {
         "accuracy": float(accuracy),
@@ -265,7 +292,8 @@ def evaluate_model(
         "per_class_accuracy": per_class_accuracy,
         "classification_report_raw": report_text,
         "confusion_matrix": cm.tolist(),
-        "total_samples": int(len(y_true))
+        "total_samples": int(len(y_true)),
+        "calibration": cal_stats
     }
     _save_evaluation_report(metrics_report, save_dir)
 

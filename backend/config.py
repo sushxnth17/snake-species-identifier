@@ -33,6 +33,10 @@ class Settings(BaseModel):
         default=os.path.join(DEFAULT_MODELS_DIR, "class_names.json"),
         description="Path to the JSON file containing species class names"
     )
+    calibration_info_path: str = Field(
+        default=os.path.join(DEFAULT_MODELS_DIR, "calibration_info.json"),
+        description="Path to the JSON file containing confidence calibration metrics and thresholds"
+    )
     max_upload_size: int = Field(
         default=5 * 1024 * 1024,
         description="Maximum allowed upload size in bytes"

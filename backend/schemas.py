@@ -50,6 +50,11 @@ class PredictionResponse(BaseModel):
         description="Confidence score of the prediction, representing probability between 0.0 and 1.0.",
         examples=[0.9724]
     )
+    confidence_level: str = Field(
+        ...,
+        description="The calibrated confidence level of the prediction.",
+        examples=["High Confidence", "Medium Confidence", "Low Confidence"]
+    )
     metadata: SnakeMetadata = Field(
         ...,
         description="Taxonomic and safety guidelines metadata corresponding to the predicted species."

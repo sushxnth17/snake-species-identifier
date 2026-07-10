@@ -4,12 +4,14 @@ import logging
 from typing import List, Optional
 import tensorflow as tf
 from backend.config import settings
+from ml.calibration import ConfidenceCalibrator
 
 logger = logging.getLogger(__name__)
 
 # Global in-memory cache
 _model: Optional[tf.keras.Model] = None
 _class_names: Optional[List[str]] = None
+_calibrator: Optional[ConfidenceCalibrator] = None
 
 def load_model() -> tf.keras.Model:
     """
@@ -93,3 +95,44 @@ def get_class_names() -> List[str]:
             "Please call load_class_names() or load during startup lifespan."
         )
     return _class_names
+
+def load_calibration() -> ConfidenceCalibrator:
+    """
+    Loads the confidence calibrator from disk and caches it in memory.
+    If it's already loaded, returns the cached instance.
+    If the file is not found, falls back to a default calibrator based on Settings.
+    """
+    global _calibrator
+    if _calibrator is None:
+        _calibrator = ConfidenceCalibrator()
+        logger.info(f"Loading calibration info from: {settings.calibration_info_path}")
+        if os.path.exists(settings.calibration_info_path):
+            try:
+                _calibrator.load(settings.calibration_info_path)
+                logger.info(f"Calibration info loaded successfully: High={_calibrator.threshold_high:.4f}, Med={_calibrator.threshold_medium:.4f}")
+            except Exception as e:
+                logger.warning(f"Failed to load calibration info JSON: {e}. Falling back to default thresholds.")
+                _calibrator.threshold_high = 0.85
+                _calibrator.threshold_medium = settings.confidence_threshold
+        else:
+            logger.info("Calibration info file not found. Initializing with default threshold values.")
+            _calibrator.threshold_high = 0.85
+            _calibrator.threshold_medium = settings.confidence_threshold
+            
+    return _calibrator
+
+def get_calibrator() -> ConfidenceCalibrator:
+    """
+    Returns the cached ConfidenceCalibrator.
+    
+    Raises:
+        RuntimeError: If the calibrator has not been loaded yet.
+    """
+    global _calibrator
+    if _calibrator is None:
+        logger.error("Attempted to get calibrator before it was loaded.")
+        raise RuntimeError(
+            "Confidence calibrator has not been loaded yet. "
+            "Please call load_calibration() or load during startup lifespan."
+        )
+    return _calibrator
