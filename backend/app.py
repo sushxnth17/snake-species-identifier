@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 import time
 import logging
 import uuid
+import io
 
 import os
 import tensorflow as tf
@@ -20,7 +21,7 @@ from backend import model_loader
 from backend import predictor
 from backend.metadata import get_snake_metadata
 from backend.metrics import DiagnosticsMetrics, metrics_tracker
-from backend.dependencies import get_settings, get_logger, get_metrics_tracker, get_model, get_class_names, get_calibrator
+from backend.dependencies import get_settings, get_logger, get_metrics_tracker, get_model, get_class_names, get_calibrator, get_gradcam
 
 from backend.validation import validate_uploaded_image, read_and_validate_size
 from backend.rate_limit import check_rate_limit_dependency, rate_limiter_cleanup_task
@@ -43,6 +44,9 @@ async def lifespan(app: FastAPI):
         
         model_loader.load_calibration()
         logger.info("Calibration info loaded successfully.", extra={"event": "calibration_loaded", "calibration_path": settings.calibration_info_path})
+        
+        model_loader.load_gradcam()
+        logger.info("Grad-CAM visualizer loaded successfully.", extra={"event": "gradcam_loaded"})
         
         startup_duration = time.perf_counter() - start_time
         logger.info(
@@ -381,7 +385,8 @@ async def predict_species(
     metrics: DiagnosticsMetrics = Depends(get_metrics_tracker),
     model: tf.keras.Model = Depends(get_model),
     class_names: List[str] = Depends(get_class_names),
-    calibrator = Depends(get_calibrator)
+    calibrator = Depends(get_calibrator),
+    gradcam = Depends(get_gradcam)
 ):
     """
     Accepts an uploaded image of a snake and predicts its species.
@@ -442,6 +447,35 @@ async def predict_species(
             meta_dict = get_snake_metadata(predicted_species)
             metadata_duration = time.perf_counter() - metadata_start
         
+        # Generate Grad-CAM visualization if available
+        visualization_path = None
+        if gradcam is not None:
+            try:
+                # Load original image as PIL Image
+                from PIL import Image
+                original_img = Image.open(io.BytesIO(image_bytes))
+                
+                # Get predicted class index (using predicted_species)
+                predicted_idx = class_names.index(predicted_species)
+                
+                # Generate heatmap
+                heatmap = gradcam.generate_heatmap(preprocessed, predicted_idx)
+                
+                # Save visualization to predictions directory
+                import uuid
+                from datetime import datetime
+                os.makedirs("predictions", exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                unique_id = uuid.uuid4().hex[:8]
+                vis_filename = f"gradcam_{timestamp}_{unique_id}.png"
+                visualization_path = os.path.abspath(os.path.join("predictions", vis_filename))
+                
+                await run_in_threadpool(gradcam.save_visualization, heatmap, original_img, visualization_path)
+                logger.info(f"Saved Grad-CAM visualization to: {visualization_path}")
+            except Exception as e:
+                logger.error(f"Failed to generate Grad-CAM visualization: {e}", exc_info=e)
+                visualization_path = None
+
         total_duration = time.perf_counter() - start_time
         
         # Round timings to milliseconds
@@ -464,6 +498,7 @@ async def predict_species(
                 "confidence": confidence,
                 "confidence_level": confidence_level,
                 "is_uncertain": is_uncertain,
+                "visualization_path": visualization_path,
                 "preprocessing_time_ms": preprocess_time_ms,
                 "inference_time_ms": inference_time_ms,
                 "metadata_lookup_time_ms": metadata_lookup_time_ms,
@@ -478,6 +513,7 @@ async def predict_species(
             is_uncertain=is_uncertain,
             top_predictions=top_predictions,
             uncertainty_reason=uncertainty_reason,
+            visualization_path=visualization_path,
             metadata=meta_dict,
             inference_time_ms=inference_time_ms
         )

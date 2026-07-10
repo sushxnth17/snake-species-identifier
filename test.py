@@ -201,15 +201,17 @@ def display_results(predictions: np.ndarray, class_names: list[str], inference_t
     print("=" * 50 + "\n")
 
 
-def display_image_with_prediction(image_path: str, predicted_species: str, confidence: float, confidence_level: str):
+def display_image_with_prediction(image_path: str, predicted_species: str, confidence: float, confidence_level: str, gradcam_img: Image.Image = None):
     """
     Displays the original image using matplotlib with the prediction as the title.
+    If a Grad-CAM image is provided, shows the original image and Grad-CAM side-by-side.
 
     Args:
         image_path: Path to the target image file.
         predicted_species: Name of the predicted class.
         confidence: Confidence score of the prediction (percentage, e.g., 95.5).
         confidence_level: Calibrated confidence tier.
+        gradcam_img: PIL Image object of the Grad-CAM visualization.
     """
     try:
         # Load the original image using PIL
@@ -218,9 +220,19 @@ def display_image_with_prediction(image_path: str, predicted_species: str, confi
         print(f"[WARNING] Could not load image for visualization: {e}")
         return
 
-    plt.figure(figsize=(6, 6))
-    plt.imshow(img)
-    plt.axis("off")
+    if gradcam_img is not None:
+        fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+        axes[0].imshow(img)
+        axes[0].axis("off")
+        axes[0].set_title("Original Image", fontsize=12, fontweight="bold")
+
+        axes[1].imshow(gradcam_img)
+        axes[1].axis("off")
+        axes[1].set_title("Grad-CAM Activation Map", fontsize=12, fontweight="bold")
+    else:
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.imshow(img)
+        ax.axis("off")
 
     # Set prediction message as title
     if confidence_level == "Low Confidence":
@@ -228,7 +240,7 @@ def display_image_with_prediction(image_path: str, predicted_species: str, confi
     else:
         title = f"Predicted Species: {predicted_species.upper()}\nConfidence: {confidence:.2f}% ({confidence_level})"
 
-    plt.title(title, fontsize=14, fontweight="bold", pad=10)
+    plt.suptitle(title, fontsize=14, fontweight="bold", y=0.98)
     plt.tight_layout()
     print("Displaying image window. Close the window to exit...")
     plt.show()
@@ -260,11 +272,40 @@ def main():
         # Print report
         display_results(predictions, class_names, latency_ms, calibrator)
 
-        # Display image with prediction title
+        # Extract prediction details
         predicted_species, confidence = calculate_confidence(predictions, class_names)
         confidence_percentage = confidence * 100
         confidence_level = calibrator.classify_confidence(confidence)
-        display_image_with_prediction(args.image_path, predicted_species, confidence_percentage, confidence_level)
+
+        # Generate Grad-CAM visualization
+        print("Generating Grad-CAM visualization...")
+        gradcam_img = None
+        try:
+            from ml.gradcam import GradCAM
+            gradcam = GradCAM(model)
+            predicted_idx = class_names.index(predicted_species)
+            
+            # Generate heatmap
+            heatmap = gradcam.generate_heatmap(preprocessed_img, predicted_idx)
+            
+            # Load original image
+            original_img = Image.open(args.image_path)
+            
+            # Overlay heatmap
+            gradcam_img = gradcam.overlay_heatmap(heatmap, original_img)
+            
+            # Save visualization next to the original image
+            img_dir, img_filename = os.path.split(args.image_path)
+            img_basename, _ = os.path.splitext(img_filename)
+            save_filename = f"{img_basename}_gradcam.png"
+            save_path = os.path.join(img_dir if img_dir else ".", save_filename)
+            gradcam.save_visualization(heatmap, original_img, save_path)
+            print(f"Grad-CAM visualization saved to: {save_path}")
+        except Exception as e:
+            print(f"[WARNING] Failed to generate/save Grad-CAM: {e}")
+
+        # Display image with prediction title and Grad-CAM side-by-side if available
+        display_image_with_prediction(args.image_path, predicted_species, confidence_percentage, confidence_level, gradcam_img)
 
     except FileNotFoundError as e:
         print(f"\n[ERROR] File Not Found: {e}", file=sys.stderr)

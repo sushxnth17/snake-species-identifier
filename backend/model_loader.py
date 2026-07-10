@@ -8,10 +8,13 @@ from ml.calibration import ConfidenceCalibrator
 
 logger = logging.getLogger(__name__)
 
+from ml.gradcam import GradCAM
+
 # Global in-memory cache
 _model: Optional[tf.keras.Model] = None
 _class_names: Optional[List[str]] = None
 _calibrator: Optional[ConfidenceCalibrator] = None
+_gradcam: Optional[GradCAM] = None
 
 def load_model() -> tf.keras.Model:
     """
@@ -136,3 +139,26 @@ def get_calibrator() -> ConfidenceCalibrator:
             "Please call load_calibration() or load during startup lifespan."
         )
     return _calibrator
+
+def load_gradcam() -> Optional[GradCAM]:
+    """
+    Loads the GradCAM visualizer and caches it in memory.
+    """
+    global _gradcam
+    if _gradcam is None:
+        logger.info("Initializing Grad-CAM visualizer...")
+        try:
+            model = get_model()
+            _gradcam = GradCAM(model)
+            logger.info("Grad-CAM visualizer initialized successfully.")
+        except Exception as e:
+            logger.error(f"Failed to initialize Grad-CAM: {e}")
+            _gradcam = None
+    return _gradcam
+
+def get_gradcam() -> Optional[GradCAM]:
+    """
+    Returns the cached GradCAM instance.
+    """
+    global _gradcam
+    return _gradcam

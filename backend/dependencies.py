@@ -76,3 +76,16 @@ def get_calibrator():
             cal.threshold_high = 0.85
             cal.threshold_medium = settings.confidence_threshold
             return cal
+
+def get_gradcam():
+    """
+    Dependency injector for Grad-CAM visualizer.
+    """
+    try:
+        return model_loader.get_gradcam()
+    except RuntimeError:
+        try:
+            return model_loader.load_gradcam()
+        except Exception as e:
+            app_logger.error(f"Failed to lazy load Grad-CAM: {e}", exc_info=e)
+            return None
