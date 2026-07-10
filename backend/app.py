@@ -416,17 +416,24 @@ async def predict_species(
         # Classify prediction confidence level using calibrator
         confidence_level = calibrator.classify_confidence(confidence)
         
+        # Always sort raw probabilities to extract top predictions (up to 3)
+        probs = raw_predictions[0]
+        top_indices = np.argsort(probs)[::-1][:3]
+        top_predictions = [
+            TopPrediction(species=class_names[idx], confidence=float(probs[idx]))
+            for idx in top_indices
+        ]
+
         # Format prediction response fields based on confidence level
         if confidence_level == "Low Confidence":
             is_uncertain = True
             species_response = "Uncertain"
-            # Sort raw probabilities to extract top 3 predictions
-            probs = raw_predictions[0]
-            top_indices = np.argsort(probs)[::-1][:3]
-            top_predictions = [
-                TopPrediction(species=class_names[idx], confidence=float(probs[idx]))
-                for idx in top_indices
-            ]
+            prediction_reliability = "Low"
+            confidence_interpretation = "Confidence is below the threshold required for a reliable classification."
+            explanation_text = (
+                f"The classification is uncertain. The highest confidence class was {predicted_species} "
+                f"({confidence * 100:.2f}%), which is below the safety threshold."
+            )
             uncertainty_reason = (
                 f"Prediction confidence {confidence * 100:.2f}% is below the "
                 f"calibrated threshold of {calibrator.threshold_medium * 100:.2f}% "
@@ -436,10 +443,24 @@ async def predict_species(
             metadata_start = time.perf_counter()
             meta_dict = get_snake_metadata("uncertain")
             metadata_duration = time.perf_counter() - metadata_start
+        elif confidence_level == "Medium Confidence":
+            is_uncertain = False
+            species_response = predicted_species
+            prediction_reliability = "Medium"
+            confidence_interpretation = "Confidence meets the 70.0% accuracy threshold for moderate reliability."
+            explanation_text = f"Predicted {predicted_species} with {confidence * 100:.2f}% confidence. The prediction is moderately reliable."
+            uncertainty_reason = None
+            
+            # Retrieve standard safety and Taxonomic Metadata
+            metadata_start = time.perf_counter()
+            meta_dict = get_snake_metadata(predicted_species)
+            metadata_duration = time.perf_counter() - metadata_start
         else:
             is_uncertain = False
             species_response = predicted_species
-            top_predictions = None
+            prediction_reliability = "High"
+            confidence_interpretation = "Confidence exceeds the 90.0% accuracy threshold determined during validation calibration."
+            explanation_text = f"Predicted {predicted_species} with {confidence * 100:.2f}% confidence. The prediction is highly reliable."
             uncertainty_reason = None
             
             # Retrieve standard safety and Taxonomic Metadata
@@ -512,6 +533,9 @@ async def predict_species(
             confidence_level=confidence_level,
             is_uncertain=is_uncertain,
             top_predictions=top_predictions,
+            confidence_interpretation=confidence_interpretation,
+            prediction_reliability=prediction_reliability,
+            explanation_text=explanation_text,
             uncertainty_reason=uncertainty_reason,
             visualization_path=visualization_path,
             metadata=meta_dict,

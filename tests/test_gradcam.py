@@ -98,6 +98,13 @@ def test_api_prediction_with_gradcam():
             assert "gradcam_" in data["visualization_path"]
             assert os.path.exists(data["visualization_path"])
             
+            # Assert new schema fields
+            assert data["prediction_reliability"] == "High"
+            assert "exceeds" in data["confidence_interpretation"]
+            assert "highly reliable" in data["explanation_text"]
+            assert len(data["top_predictions"]) == 2
+            assert data["top_predictions"][0]["species"] == "cobra"
+            
             # Clean up saved test visualization file
             if os.path.exists(data["visualization_path"]):
                 os.remove(data["visualization_path"])

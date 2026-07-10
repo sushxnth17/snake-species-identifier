@@ -69,9 +69,21 @@ class PredictionResponse(BaseModel):
         default=False,
         description="Indicates whether the prediction is uncertain."
     )
-    top_predictions: Optional[List[TopPrediction]] = Field(
-        default=None,
-        description="List of the top three predictions, populated when is_uncertain is True."
+    top_predictions: List[TopPrediction] = Field(
+        ...,
+        description="List of the top predictions, always populated."
+    )
+    confidence_interpretation: str = Field(
+        ...,
+        description="Interpretation of the prediction confidence."
+    )
+    prediction_reliability: str = Field(
+        ...,
+        description="Overall prediction reliability rating."
+    )
+    explanation_text: str = Field(
+        ...,
+        description="Concise explanation text for the prediction and its reliability."
     )
     uncertainty_reason: Optional[str] = Field(
         default=None,

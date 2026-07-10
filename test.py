@@ -165,6 +165,23 @@ def display_results(predictions: np.ndarray, class_names: list[str], inference_t
     predicted_idx = class_names.index(predicted_species)
     confidence_level = calibrator.classify_confidence(confidence)
 
+    # Map new fields
+    if confidence_level == "Low Confidence":
+        reliability = "Low"
+        interpretation = "Confidence is below the threshold required for a reliable classification."
+        explanation = (
+            f"The classification is uncertain. The highest confidence class was {predicted_species} "
+            f"({confidence_percentage:.2f}%), which is below the safety threshold."
+        )
+    elif confidence_level == "Medium Confidence":
+        reliability = "Medium"
+        interpretation = "Confidence meets the 70.0% accuracy threshold for moderate reliability."
+        explanation = f"Predicted {predicted_species} with {confidence_percentage:.2f}% confidence. The prediction is moderately reliable."
+    else:
+        reliability = "High"
+        interpretation = "Confidence exceeds the 90.0% accuracy threshold determined during validation calibration."
+        explanation = f"Predicted {predicted_species} with {confidence_percentage:.2f}% confidence. The prediction is highly reliable."
+
     print("\n" + "=" * 50)
     print("INFERENCE RESULTS REPORT")
     print("=" * 50)
@@ -182,9 +199,10 @@ def display_results(predictions: np.ndarray, class_names: list[str], inference_t
         print(f"  Predicted Species:     {predicted_species.upper()}")
         print(f"  Confidence Score:      {confidence_percentage:.2f}%")
         print(f"  Confidence Tier:       {confidence_level}")
-        if confidence_level == "Medium Confidence":
-            print("  NOTE: Prediction confidence is moderate.")
 
+    print(f"  Reliability Rating:    {reliability}")
+    print(f"  Interpretation:        {interpretation}")
+    print(f"  Explanation:           {explanation}")
     print(f"  Inference Latency:     {inference_time_ms:.2f} ms")
     print("-" * 50)
 

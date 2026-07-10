@@ -86,9 +86,19 @@ def test_api_prediction_with_confidence_tier():
         assert "confidence_level" in data
         assert data["confidence_level"] == "High Confidence"
         assert data["is_uncertain"] is False
-        assert data["top_predictions"] is None
         assert data["uncertainty_reason"] is None
         assert data["species"] == "cobra"
+        
+        # Verify top predictions are populated even for confident predictions
+        assert isinstance(data["top_predictions"], list)
+        assert len(data["top_predictions"]) == 2
+        assert data["top_predictions"][0]["species"] == "cobra"
+        assert abs(data["top_predictions"][0]["confidence"] - 0.95) < 1e-5
+        
+        # Verify new interpretation and explanation fields
+        assert data["prediction_reliability"] == "High"
+        assert "exceeds" in data["confidence_interpretation"]
+        assert "highly reliable" in data["explanation_text"]
 
 def test_api_prediction_uncertain():
     client = TestClient(app)
@@ -131,6 +141,11 @@ def test_api_prediction_uncertain():
         assert len(data["top_predictions"]) == 2
         assert data["top_predictions"][0]["species"] == "cobra"
         assert abs(data["top_predictions"][0]["confidence"] - 0.55) < 1e-5
+        
+        # Verify new interpretation and explanation fields for uncertain case
+        assert data["prediction_reliability"] == "Low"
+        assert "below" in data["confidence_interpretation"]
+        assert "uncertain" in data["explanation_text"]
         
         # Verify safety-first metadata is returned (venomous=True)
         assert data["metadata"]["venomous"] is True
