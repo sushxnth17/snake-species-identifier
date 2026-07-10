@@ -15,7 +15,7 @@ from typing import List
 from datetime import datetime
 from backend.config import settings, Settings
 import numpy as np
-from backend.schemas import PredictionResponse, ErrorResponse, ModelInfoResponse, MetricsResponse, HealthResponse, TopPrediction
+from backend.schemas import PredictionResponse, ErrorResponse, ModelInfoResponse, MetricsResponse, HealthResponse, TopPrediction, DiagnosticsResponse
 from backend.logging_config import setup_structured_logging, request_id_var
 from backend import model_loader
 from backend import predictor
@@ -333,6 +333,30 @@ def get_metrics(
         "failed_predictions": metrics.failed_predictions
     }
 
+@app.get(
+    "/diagnostics",
+    response_model=DiagnosticsResponse,
+    summary="Get Model Diagnostic Metrics",
+    description="Returns aggregated diagnostics details for the model, including confidence distribution, species prediction frequency, average confidence, and uncertain prediction rate.",
+    response_description="A JSON object holding model diagnostics statistics."
+)
+def get_diagnostics(
+    request: Request,
+    logger: logging.Logger = Depends(get_logger),
+    metrics: DiagnosticsMetrics = Depends(get_metrics_tracker)
+):
+    """
+    Retrieve model performance diagnostics, confidence distributions, and reliability metrics.
+    """
+    logger.info(
+        "Diagnostics endpoint accessed",
+        extra={
+            "event": "diagnostics_check",
+            "endpoint": request.url.path
+        }
+    )
+    return metrics.get_diagnostics()
+
 @app.post(
     "/predict",
     dependencies=[Depends(check_rate_limit_dependency)],
@@ -505,8 +529,15 @@ async def predict_species(
         metadata_lookup_time_ms = round(metadata_duration * 1000, 2)
         total_request_duration_ms = round(total_duration * 1000, 2)
         
-        # Record successful prediction metrics
-        metrics.record_prediction(inference_time_ms, success=True)
+        # Record successful prediction metrics and diagnostics details
+        metrics.record_prediction(
+            inference_time_ms=inference_time_ms,
+            success=True,
+            confidence=confidence,
+            confidence_level=confidence_level,
+            species=species_response,
+            is_uncertain=is_uncertain
+        )
         
         # Log structured prediction request details
         logger.info(
