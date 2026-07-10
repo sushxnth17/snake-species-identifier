@@ -312,11 +312,11 @@ def main():
             # Overlay heatmap
             gradcam_img = gradcam.overlay_heatmap(heatmap, original_img)
             
-            # Save visualization next to the original image
-            img_dir, img_filename = os.path.split(args.image_path)
-            img_basename, _ = os.path.splitext(img_filename)
-            save_filename = f"{img_basename}_gradcam.png"
-            save_path = os.path.join(img_dir if img_dir else ".", save_filename)
+            # Save visualization to a dedicated predictions directory to avoid polluting raw datasets
+            os.makedirs("predictions", exist_ok=True)
+            img_basename, _ = os.path.splitext(os.path.basename(args.image_path))
+            save_filename = f"gradcam_{img_basename}.png"
+            save_path = os.path.abspath(os.path.join("predictions", save_filename))
             gradcam.save_visualization(heatmap, original_img, save_path)
             print(f"Grad-CAM visualization saved to: {save_path}")
         except Exception as e:
