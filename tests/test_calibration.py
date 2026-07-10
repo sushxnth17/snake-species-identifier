@@ -85,3 +85,53 @@ def test_api_prediction_with_confidence_tier():
         data = response.json()
         assert "confidence_level" in data
         assert data["confidence_level"] == "High Confidence"
+        assert data["is_uncertain"] is False
+        assert data["top_predictions"] is None
+        assert data["uncertainty_reason"] is None
+        assert data["species"] == "cobra"
+
+def test_api_prediction_uncertain():
+    client = TestClient(app)
+    
+    mock_preprocessed = np.zeros((1, 224, 224, 3), dtype=np.float32)
+    # Mocking low confidence prediction (0.55 is below threshold_medium 0.60)
+    mock_raw_predictions = np.array([[0.55, 0.45]], dtype=np.float32)
+    mock_classes = ["cobra", "krait"]
+    
+    mock_calibrator = ConfidenceCalibrator()
+    mock_calibrator.threshold_high = 0.90
+    mock_calibrator.threshold_medium = 0.60
+    mock_calibrator.bin_boundaries = np.linspace(0.0, 1.0, 11)
+    mock_calibrator.bin_accuracies = [0.05, 0.15, 0.25, 0.35, 0.45, 0.30, 0.75, 0.85, 0.95, 0.95]
+    
+    with patch("backend.predictor.preprocess_image", return_value=mock_preprocessed), \
+         patch("backend.predictor.predict", return_value=mock_raw_predictions), \
+         patch("backend.dependencies.get_model", return_value=MagicMock()), \
+         patch("backend.dependencies.get_class_names", return_value=mock_classes), \
+         patch("backend.dependencies.get_calibrator", return_value=mock_calibrator):
+        
+        dummy_png = Image.new("RGB", (10, 10), color="blue")
+        buf = io.BytesIO()
+        dummy_png.save(buf, format="PNG")
+        files = {"file": ("test.png", buf.getvalue(), "image/png")}
+        
+        response = client.post("/predict", files=files)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "confidence_level" in data
+        assert data["confidence_level"] == "Low Confidence"
+        assert data["is_uncertain"] is True
+        assert data["species"] == "Uncertain"
+        assert data["uncertainty_reason"] is not None
+        assert "below the calibrated threshold" in data["uncertainty_reason"]
+        
+        # Verify top predictions list is present and contains expected entries
+        assert data["top_predictions"] is not None
+        assert len(data["top_predictions"]) == 2
+        assert data["top_predictions"][0]["species"] == "cobra"
+        assert abs(data["top_predictions"][0]["confidence"] - 0.55) < 1e-5
+        
+        # Verify safety-first metadata is returned (venomous=True)
+        assert data["metadata"]["venomous"] is True
+        assert "Uncertain Species" in data["metadata"]["common_name"]

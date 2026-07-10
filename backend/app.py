@@ -13,7 +13,8 @@ import tensorflow as tf
 from typing import List
 from datetime import datetime
 from backend.config import settings, Settings
-from backend.schemas import PredictionResponse, ErrorResponse, ModelInfoResponse, MetricsResponse, HealthResponse
+import numpy as np
+from backend.schemas import PredictionResponse, ErrorResponse, ModelInfoResponse, MetricsResponse, HealthResponse, TopPrediction
 from backend.logging_config import setup_structured_logging, request_id_var
 from backend import model_loader
 from backend import predictor
@@ -410,10 +411,36 @@ async def predict_species(
         # Classify prediction confidence level using calibrator
         confidence_level = calibrator.classify_confidence(confidence)
         
-        # 7. Retrieve Safety and Taxonomic Metadata
-        metadata_start = time.perf_counter()
-        meta_dict = get_snake_metadata(predicted_species)
-        metadata_duration = time.perf_counter() - metadata_start
+        # Format prediction response fields based on confidence level
+        if confidence_level == "Low Confidence":
+            is_uncertain = True
+            species_response = "Uncertain"
+            # Sort raw probabilities to extract top 3 predictions
+            probs = raw_predictions[0]
+            top_indices = np.argsort(probs)[::-1][:3]
+            top_predictions = [
+                TopPrediction(species=class_names[idx], confidence=float(probs[idx]))
+                for idx in top_indices
+            ]
+            uncertainty_reason = (
+                f"Prediction confidence {confidence * 100:.2f}% is below the "
+                f"calibrated threshold of {calibrator.threshold_medium * 100:.2f}% "
+                f"required for medium confidence."
+            )
+            # Retrieve Safety-first metadata
+            metadata_start = time.perf_counter()
+            meta_dict = get_snake_metadata("uncertain")
+            metadata_duration = time.perf_counter() - metadata_start
+        else:
+            is_uncertain = False
+            species_response = predicted_species
+            top_predictions = None
+            uncertainty_reason = None
+            
+            # Retrieve standard safety and Taxonomic Metadata
+            metadata_start = time.perf_counter()
+            meta_dict = get_snake_metadata(predicted_species)
+            metadata_duration = time.perf_counter() - metadata_start
         
         total_duration = time.perf_counter() - start_time
         
@@ -428,14 +455,15 @@ async def predict_species(
         
         # Log structured prediction request details
         logger.info(
-            f"Prediction completed for {file.filename}: {predicted_species} ({confidence:.4f}, {confidence_level})",
+            f"Prediction completed for {file.filename}: {species_response} ({confidence:.4f}, {confidence_level})",
             extra={
                 "event": "prediction_request",
                 "uploaded_filename": file.filename,
                 "file_size_bytes": len(image_bytes),
-                "prediction": predicted_species,
+                "prediction": species_response,
                 "confidence": confidence,
                 "confidence_level": confidence_level,
+                "is_uncertain": is_uncertain,
                 "preprocessing_time_ms": preprocess_time_ms,
                 "inference_time_ms": inference_time_ms,
                 "metadata_lookup_time_ms": metadata_lookup_time_ms,
@@ -444,9 +472,12 @@ async def predict_species(
         )
         
         return PredictionResponse(
-            species=predicted_species,
+            species=species_response,
             confidence=confidence,
             confidence_level=confidence_level,
+            is_uncertain=is_uncertain,
+            top_predictions=top_predictions,
+            uncertainty_reason=uncertainty_reason,
             metadata=meta_dict,
             inference_time_ms=inference_time_ms
         )

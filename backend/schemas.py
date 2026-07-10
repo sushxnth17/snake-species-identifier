@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 class SnakeMetadata(BaseModel):
     common_name: str = Field(
@@ -39,6 +39,16 @@ class SnakeMetadata(BaseModel):
         ]
     )
 
+class TopPrediction(BaseModel):
+    species: str = Field(
+        ...,
+        description="Species name of the ranked prediction."
+    )
+    confidence: float = Field(
+        ...,
+        description="Confidence score of the ranked prediction."
+    )
+
 class PredictionResponse(BaseModel):
     species: str = Field(
         ...,
@@ -54,6 +64,18 @@ class PredictionResponse(BaseModel):
         ...,
         description="The calibrated confidence level of the prediction.",
         examples=["High Confidence", "Medium Confidence", "Low Confidence"]
+    )
+    is_uncertain: bool = Field(
+        default=False,
+        description="Indicates whether the prediction is uncertain."
+    )
+    top_predictions: Optional[List[TopPrediction]] = Field(
+        default=None,
+        description="List of the top three predictions, populated when is_uncertain is True."
+    )
+    uncertainty_reason: Optional[str] = Field(
+        default=None,
+        description="Reason explaining why the prediction is uncertain."
     )
     metadata: SnakeMetadata = Field(
         ...,

@@ -169,14 +169,21 @@ def display_results(predictions: np.ndarray, class_names: list[str], inference_t
     print("INFERENCE RESULTS REPORT")
     print("=" * 50)
 
-    print(f"  Predicted Species:     {predicted_species.upper()}")
-    print(f"  Confidence Score:      {confidence_percentage:.2f}%")
-    print(f"  Confidence Tier:       {confidence_level}")
-
     if confidence_level == "Low Confidence":
+        print("  Predicted Species:     UNCERTAIN PREDICTION")
+        print(f"  Confidence Score:      {confidence_percentage:.2f}%")
+        print(f"  Confidence Tier:       {confidence_level}")
         print("  WARNING: Prediction confidence is low. Treat this result as uncertain.")
-    elif confidence_level == "Medium Confidence":
-        print("  NOTE: Prediction confidence is moderate.")
+        print(
+            f"  Uncertainty Reason:    Prediction confidence {confidence_percentage:.2f}% is below the "
+            f"calibrated threshold of {calibrator.threshold_medium * 100:.2f}% required for medium confidence."
+        )
+    else:
+        print(f"  Predicted Species:     {predicted_species.upper()}")
+        print(f"  Confidence Score:      {confidence_percentage:.2f}%")
+        print(f"  Confidence Tier:       {confidence_level}")
+        if confidence_level == "Medium Confidence":
+            print("  NOTE: Prediction confidence is moderate.")
 
     print(f"  Inference Latency:     {inference_time_ms:.2f} ms")
     print("-" * 50)

@@ -42,6 +42,22 @@ DEFAULT_METADATA: Dict[str, Any] = {
     "first_aid": "Keep the victim calm, immobilize the bitten limb, and seek emergency medical care immediately."
 }
 
+UNCERTAIN_METADATA: Dict[str, Any] = {
+    "common_name": "Uncertain Species Identification",
+    "scientific_name": "Uncertain",
+    "venomous": True,  # Safety-first: treat as potentially venomous
+    "description": "The classification confidence is below the reliability threshold. To ensure user safety, this prediction is marked as uncertain. Do not approach or handle the snake.",
+    "habitat": "Unknown",
+    "first_aid": (
+        "1. Treat the snake as venomous out of an abundance of caution.\n"
+        "2. Keep the victim calm and reassured to slow venom circulation.\n"
+        "3. Immobilize the bitten limb using a splint or loose bandage.\n"
+        "4. Remove rings, bracelets, or tight clothing near the bite area.\n"
+        "5. Transport the victim immediately to the nearest medical facility with anti-venom.\n"
+        "6. DO NOT cut the bite site, apply a tourniquet, or try to suck out the venom."
+    )
+}
+
 def get_snake_metadata(species_name: str) -> Dict[str, Any]:
     """
     Retrieves safety and taxonomic metadata for a given snake species by name.
@@ -54,4 +70,6 @@ def get_snake_metadata(species_name: str) -> Dict[str, Any]:
         habitat, and first-aid instructions.
     """
     normalized_name = species_name.lower().strip()
+    if normalized_name in ("uncertain", "uncertain prediction"):
+        return UNCERTAIN_METADATA
     return SNAKE_METADATA.get(normalized_name, DEFAULT_METADATA)
