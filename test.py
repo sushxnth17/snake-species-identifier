@@ -18,6 +18,7 @@ import tensorflow as tf
 
 from ml.constants import CONFIDENCE_THRESHOLD, IMAGE_SIZE, MODEL_NAME, TOP_K_PREDICTIONS
 from ml.inference import preprocess_single_image, predict_helper, calculate_confidence
+from ml.calibration import ConfidenceCalibrator
 
 # Constants
 MODEL_PATH = os.path.join("models", f"{MODEL_NAME}.keras")
@@ -60,16 +61,16 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_model_and_metadata(model_path: str, class_names_path: str) -> tuple[tf.keras.Model, list[str]]:
+def load_model_and_metadata(model_path: str, class_names_path: str) -> tuple[tf.keras.Model, list[str], ConfidenceCalibrator]:
     """
-    Loads the trained Keras model and the associated class names list.
+    Loads the trained Keras model, the associated class names list, and the calibrator.
 
     Args:
         model_path: Path to the Keras model (.keras).
         class_names_path: Path to the class names JSON file (.json).
 
     Returns:
-        A tuple of (loaded_model, class_names_list).
+        A tuple of (loaded_model, class_names_list, calibrator_instance).
     """
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found at: {model_path}")
@@ -92,7 +93,23 @@ def load_model_and_metadata(model_path: str, class_names_path: str) -> tuple[tf.
     if not isinstance(class_names, list) or len(class_names) == 0:
         raise ValueError("Invalid class names format; expected a non-empty list.")
 
-    return model, class_names
+    # Load calibration info if it exists
+    calibrator = ConfidenceCalibrator()
+    calibration_path = os.path.join(os.path.dirname(model_path), "calibration_info.json")
+    if os.path.exists(calibration_path):
+        try:
+            calibrator.load(calibration_path)
+            print(f"Loaded calibration information from: {calibration_path}")
+        except Exception as e:
+            print(f"[WARNING] Failed to load calibration info: {e}. Using default thresholds.")
+            calibrator.threshold_high = 0.85
+            calibrator.threshold_medium = CONFIDENCE_THRESHOLD
+    else:
+        print("Calibration file not found. Using default thresholds.")
+        calibrator.threshold_high = 0.85
+        calibrator.threshold_medium = CONFIDENCE_THRESHOLD
+
+    return model, class_names, calibrator
 
 
 def preprocess_image(image_path: str, target_size: tuple = IMAGE_SIZE) -> tf.Tensor:
@@ -133,7 +150,7 @@ def run_inference(model: tf.keras.Model, preprocessed_img: tf.Tensor) -> tuple[n
     return predictions[0], latency_ms
 
 
-def display_results(predictions: np.ndarray, class_names: list[str], inference_time_ms: float, threshold: float = CONFIDENCE_THRESHOLD):
+def display_results(predictions: np.ndarray, class_names: list[str], inference_time_ms: float, calibrator: ConfidenceCalibrator):
     """
     Formats and prints prediction probabilities, classification labels, and performance metrics.
 
@@ -141,22 +158,51 @@ def display_results(predictions: np.ndarray, class_names: list[str], inference_t
         predictions: Probability array of predictions for the class labels.
         class_names: List of all target class names.
         inference_time_ms: Latency of the model inference.
-        threshold: Minimum confidence threshold to display the prediction normally.
+        calibrator: ConfidenceCalibrator instance.
     """
     predicted_species, confidence = calculate_confidence(predictions, class_names)
     confidence_percentage = confidence * 100
     predicted_idx = class_names.index(predicted_species)
+    confidence_level = calibrator.classify_confidence(confidence)
+
+    # Map new fields
+    if confidence_level == "Low Confidence":
+        reliability = "Low"
+        interpretation = "Confidence is below the threshold required for a reliable classification."
+        explanation = (
+            f"The classification is uncertain. The highest confidence class was {predicted_species} "
+            f"({confidence_percentage:.2f}%), which is below the safety threshold."
+        )
+    elif confidence_level == "Medium Confidence":
+        reliability = "Medium"
+        interpretation = "Confidence meets the 70.0% accuracy threshold for moderate reliability."
+        explanation = f"Predicted {predicted_species} with {confidence_percentage:.2f}% confidence. The prediction is moderately reliable."
+    else:
+        reliability = "High"
+        interpretation = "Confidence exceeds the 90.0% accuracy threshold determined during validation calibration."
+        explanation = f"Predicted {predicted_species} with {confidence_percentage:.2f}% confidence. The prediction is highly reliable."
 
     print("\n" + "=" * 50)
     print("INFERENCE RESULTS REPORT")
     print("=" * 50)
 
-    if confidence < threshold:
-        print("  Prediction confidence is low. Treat this result as uncertain.")
+    if confidence_level == "Low Confidence":
+        print("  Predicted Species:     UNCERTAIN PREDICTION")
+        print(f"  Confidence Score:      {confidence_percentage:.2f}%")
+        print(f"  Confidence Tier:       {confidence_level}")
+        print("  WARNING: Prediction confidence is low. Treat this result as uncertain.")
+        print(
+            f"  Uncertainty Reason:    Prediction confidence {confidence_percentage:.2f}% is below the "
+            f"calibrated threshold of {calibrator.threshold_medium * 100:.2f}% required for medium confidence."
+        )
     else:
         print(f"  Predicted Species:     {predicted_species.upper()}")
         print(f"  Confidence Score:      {confidence_percentage:.2f}%")
+        print(f"  Confidence Tier:       {confidence_level}")
 
+    print(f"  Reliability Rating:    {reliability}")
+    print(f"  Interpretation:        {interpretation}")
+    print(f"  Explanation:           {explanation}")
     print(f"  Inference Latency:     {inference_time_ms:.2f} ms")
     print("-" * 50)
 
@@ -173,15 +219,17 @@ def display_results(predictions: np.ndarray, class_names: list[str], inference_t
     print("=" * 50 + "\n")
 
 
-def display_image_with_prediction(image_path: str, predicted_species: str, confidence: float, threshold: float):
+def display_image_with_prediction(image_path: str, predicted_species: str, confidence: float, confidence_level: str, gradcam_img: Image.Image = None):
     """
     Displays the original image using matplotlib with the prediction as the title.
+    If a Grad-CAM image is provided, shows the original image and Grad-CAM side-by-side.
 
     Args:
         image_path: Path to the target image file.
         predicted_species: Name of the predicted class.
         confidence: Confidence score of the prediction (percentage, e.g., 95.5).
-        threshold: Minimum confidence threshold.
+        confidence_level: Calibrated confidence tier.
+        gradcam_img: PIL Image object of the Grad-CAM visualization.
     """
     try:
         # Load the original image using PIL
@@ -190,17 +238,27 @@ def display_image_with_prediction(image_path: str, predicted_species: str, confi
         print(f"[WARNING] Could not load image for visualization: {e}")
         return
 
-    plt.figure(figsize=(6, 6))
-    plt.imshow(img)
-    plt.axis("off")
+    if gradcam_img is not None:
+        fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+        axes[0].imshow(img)
+        axes[0].axis("off")
+        axes[0].set_title("Original Image", fontsize=12, fontweight="bold")
+
+        axes[1].imshow(gradcam_img)
+        axes[1].axis("off")
+        axes[1].set_title("Grad-CAM Activation Map", fontsize=12, fontweight="bold")
+    else:
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.imshow(img)
+        ax.axis("off")
 
     # Set prediction message as title
-    if confidence / 100.0 < threshold:
+    if confidence_level == "Low Confidence":
         title = "Low Confidence Prediction\nTreat result as uncertain"
     else:
-        title = f"Predicted Species: {predicted_species.upper()}\nConfidence: {confidence:.2f}%"
+        title = f"Predicted Species: {predicted_species.upper()}\nConfidence: {confidence:.2f}% ({confidence_level})"
 
-    plt.title(title, fontsize=14, fontweight="bold", pad=10)
+    plt.suptitle(title, fontsize=14, fontweight="bold", y=0.98)
     plt.tight_layout()
     print("Displaying image window. Close the window to exit...")
     plt.show()
@@ -214,7 +272,12 @@ def main():
     try:
         # Load model and mapping metadata
         print("Loading classification model and class mappings...")
-        model, class_names = load_model_and_metadata(args.model_path, args.class_names_path)
+        model, class_names, calibrator = load_model_and_metadata(args.model_path, args.class_names_path)
+
+        # Override default threshold if specified on CLI and calibration was not found
+        calibration_path = os.path.join(os.path.dirname(args.model_path), "calibration_info.json")
+        if not os.path.exists(calibration_path):
+            calibrator.threshold_medium = args.threshold
 
         # Preprocess input image
         print(f"Loading and preprocessing target image: {args.image_path}")
@@ -225,12 +288,42 @@ def main():
         predictions, latency_ms = run_inference(model, preprocessed_img)
 
         # Print report
-        display_results(predictions, class_names, latency_ms, args.threshold)
+        display_results(predictions, class_names, latency_ms, calibrator)
 
-        # Display image with prediction title
+        # Extract prediction details
         predicted_species, confidence = calculate_confidence(predictions, class_names)
         confidence_percentage = confidence * 100
-        display_image_with_prediction(args.image_path, predicted_species, confidence_percentage, args.threshold)
+        confidence_level = calibrator.classify_confidence(confidence)
+
+        # Generate Grad-CAM visualization
+        print("Generating Grad-CAM visualization...")
+        gradcam_img = None
+        try:
+            from ml.gradcam import GradCAM
+            gradcam = GradCAM(model)
+            predicted_idx = class_names.index(predicted_species)
+            
+            # Generate heatmap
+            heatmap = gradcam.generate_heatmap(preprocessed_img, predicted_idx)
+            
+            # Load original image
+            original_img = Image.open(args.image_path)
+            
+            # Overlay heatmap
+            gradcam_img = gradcam.overlay_heatmap(heatmap, original_img)
+            
+            # Save visualization to a dedicated predictions directory to avoid polluting raw datasets
+            os.makedirs("predictions", exist_ok=True)
+            img_basename, _ = os.path.splitext(os.path.basename(args.image_path))
+            save_filename = f"gradcam_{img_basename}.png"
+            save_path = os.path.abspath(os.path.join("predictions", save_filename))
+            gradcam.save_visualization(heatmap, original_img, save_path)
+            print(f"Grad-CAM visualization saved to: {save_path}")
+        except Exception as e:
+            print(f"[WARNING] Failed to generate/save Grad-CAM: {e}")
+
+        # Display image with prediction title and Grad-CAM side-by-side if available
+        display_image_with_prediction(args.image_path, predicted_species, confidence_percentage, confidence_level, gradcam_img)
 
     except FileNotFoundError as e:
         print(f"\n[ERROR] File Not Found: {e}", file=sys.stderr)

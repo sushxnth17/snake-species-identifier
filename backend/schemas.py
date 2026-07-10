@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Dict
 
 class SnakeMetadata(BaseModel):
     common_name: str = Field(
@@ -39,6 +39,16 @@ class SnakeMetadata(BaseModel):
         ]
     )
 
+class TopPrediction(BaseModel):
+    species: str = Field(
+        ...,
+        description="Species name of the ranked prediction."
+    )
+    confidence: float = Field(
+        ...,
+        description="Confidence score of the ranked prediction."
+    )
+
 class PredictionResponse(BaseModel):
     species: str = Field(
         ...,
@@ -49,6 +59,40 @@ class PredictionResponse(BaseModel):
         ...,
         description="Confidence score of the prediction, representing probability between 0.0 and 1.0.",
         examples=[0.9724]
+    )
+    confidence_level: str = Field(
+        ...,
+        description="The calibrated confidence level of the prediction.",
+        examples=["High Confidence", "Medium Confidence", "Low Confidence"]
+    )
+    is_uncertain: bool = Field(
+        default=False,
+        description="Indicates whether the prediction is uncertain."
+    )
+    top_predictions: List[TopPrediction] = Field(
+        ...,
+        description="List of the top predictions, always populated."
+    )
+    confidence_interpretation: str = Field(
+        ...,
+        description="Interpretation of the prediction confidence."
+    )
+    prediction_reliability: str = Field(
+        ...,
+        description="Overall prediction reliability rating."
+    )
+    explanation_text: str = Field(
+        ...,
+        description="Concise explanation text for the prediction and its reliability."
+    )
+    uncertainty_reason: Optional[str] = Field(
+        default=None,
+        description="Reason explaining why the prediction is uncertain."
+    )
+    visualization_path: Optional[str] = Field(
+        default=None,
+        description="The absolute path to the saved Grad-CAM visualization image, if generated.",
+        examples=["C:\\Users\\susha\\OneDrive\\Desktop\\snake\\predictions\\gradcam_20260710_123456.png"]
     )
     metadata: SnakeMetadata = Field(
         ...,
@@ -172,4 +216,41 @@ class HealthResponse(BaseModel):
         ...,
         description="Legacy model load status indicator.",
         examples=[True]
+    )
+
+class DiagnosticsResponse(BaseModel):
+    confidence_distribution: Dict[str, int] = Field(
+        ...,
+        description="Counts of predictions within 10 equal-width confidence intervals from 0.0 to 1.0.",
+        examples=[{"0.9-1.0": 5, "0.8-0.9": 2}]
+    )
+    confidence_level_counts: Dict[str, int] = Field(
+        ...,
+        description="Counts of predictions per calibrated confidence level.",
+        examples=[{"High Confidence": 5, "Medium Confidence": 2, "Low Confidence": 1}]
+    )
+    prediction_frequency: Dict[str, int] = Field(
+        ...,
+        description="Counts of predictions per predicted species class, including 'Uncertain'.",
+        examples=[{"cobra": 5, "krait": 2, "Uncertain": 1}]
+    )
+    predictions_per_minute: float = Field(
+        ...,
+        description="Average number of prediction requests processed per minute.",
+        examples=[1.25]
+    )
+    average_confidence: float = Field(
+        ...,
+        description="Average confidence score across all successful predictions.",
+        examples=[0.8724]
+    )
+    uncertain_prediction_rate: float = Field(
+        ...,
+        description="Ratio of low confidence / uncertain predictions to total successful predictions.",
+        examples=[0.125]
+    )
+    total_predictions: int = Field(
+        ...,
+        description="Total number of prediction requests processed.",
+        examples=[10]
     )

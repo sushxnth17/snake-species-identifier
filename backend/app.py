@@ -7,19 +7,21 @@ from contextlib import asynccontextmanager
 import time
 import logging
 import uuid
+import io
 
 import os
 import tensorflow as tf
 from typing import List
 from datetime import datetime
 from backend.config import settings, Settings
-from backend.schemas import PredictionResponse, ErrorResponse, ModelInfoResponse, MetricsResponse, HealthResponse
+import numpy as np
+from backend.schemas import PredictionResponse, ErrorResponse, ModelInfoResponse, MetricsResponse, HealthResponse, TopPrediction, DiagnosticsResponse
 from backend.logging_config import setup_structured_logging, request_id_var
 from backend import model_loader
 from backend import predictor
 from backend.metadata import get_snake_metadata
 from backend.metrics import DiagnosticsMetrics, metrics_tracker
-from backend.dependencies import get_settings, get_logger, get_metrics_tracker, get_model, get_class_names
+from backend.dependencies import get_settings, get_logger, get_metrics_tracker, get_model, get_class_names, get_calibrator, get_gradcam
 
 from backend.validation import validate_uploaded_image, read_and_validate_size
 from backend.rate_limit import check_rate_limit_dependency, rate_limiter_cleanup_task
@@ -39,6 +41,12 @@ async def lifespan(app: FastAPI):
         
         model_loader.load_class_names()
         logger.info("Class names loaded successfully.", extra={"event": "class_names_loaded", "class_names_path": settings.class_names_path})
+        
+        model_loader.load_calibration()
+        logger.info("Calibration info loaded successfully.", extra={"event": "calibration_loaded", "calibration_path": settings.calibration_info_path})
+        
+        model_loader.load_gradcam()
+        logger.info("Grad-CAM visualizer loaded successfully.", extra={"event": "gradcam_loaded"})
         
         startup_duration = time.perf_counter() - start_time
         logger.info(
@@ -325,6 +333,30 @@ def get_metrics(
         "failed_predictions": metrics.failed_predictions
     }
 
+@app.get(
+    "/diagnostics",
+    response_model=DiagnosticsResponse,
+    summary="Get Model Diagnostic Metrics",
+    description="Returns aggregated diagnostics details for the model, including confidence distribution, species prediction frequency, average confidence, and uncertain prediction rate.",
+    response_description="A JSON object holding model diagnostics statistics."
+)
+def get_diagnostics(
+    request: Request,
+    logger: logging.Logger = Depends(get_logger),
+    metrics: DiagnosticsMetrics = Depends(get_metrics_tracker)
+):
+    """
+    Retrieve model performance diagnostics, confidence distributions, and reliability metrics.
+    """
+    logger.info(
+        "Diagnostics endpoint accessed",
+        extra={
+            "event": "diagnostics_check",
+            "endpoint": request.url.path
+        }
+    )
+    return metrics.get_diagnostics()
+
 @app.post(
     "/predict",
     dependencies=[Depends(check_rate_limit_dependency)],
@@ -376,7 +408,9 @@ async def predict_species(
     logger: logging.Logger = Depends(get_logger),
     metrics: DiagnosticsMetrics = Depends(get_metrics_tracker),
     model: tf.keras.Model = Depends(get_model),
-    class_names: List[str] = Depends(get_class_names)
+    class_names: List[str] = Depends(get_class_names),
+    calibrator = Depends(get_calibrator),
+    gradcam = Depends(get_gradcam)
 ):
     """
     Accepts an uploaded image of a snake and predicts its species.
@@ -403,11 +437,90 @@ async def predict_species(
         # 6. Extract predicted class and confidence
         predicted_species, confidence = predictor.format_prediction_results(raw_predictions, class_names)
         
-        # 7. Retrieve Safety and Taxonomic Metadata
-        metadata_start = time.perf_counter()
-        meta_dict = get_snake_metadata(predicted_species)
-        metadata_duration = time.perf_counter() - metadata_start
+        # Classify prediction confidence level using calibrator
+        confidence_level = calibrator.classify_confidence(confidence)
         
+        # Always sort raw probabilities to extract top predictions (up to 3)
+        probs = raw_predictions[0]
+        top_indices = np.argsort(probs)[::-1][:3]
+        top_predictions = [
+            TopPrediction(species=class_names[idx], confidence=float(probs[idx]))
+            for idx in top_indices
+        ]
+
+        # Format prediction response fields based on confidence level
+        if confidence_level == "Low Confidence":
+            is_uncertain = True
+            species_response = "Uncertain"
+            prediction_reliability = "Low"
+            confidence_interpretation = "Confidence is below the threshold required for a reliable classification."
+            explanation_text = (
+                f"The classification is uncertain. The highest confidence class was {predicted_species} "
+                f"({confidence * 100:.2f}%), which is below the safety threshold."
+            )
+            uncertainty_reason = (
+                f"Prediction confidence {confidence * 100:.2f}% is below the "
+                f"calibrated threshold of {calibrator.threshold_medium * 100:.2f}% "
+                f"required for medium confidence."
+            )
+            # Retrieve Safety-first metadata
+            metadata_start = time.perf_counter()
+            meta_dict = get_snake_metadata("uncertain")
+            metadata_duration = time.perf_counter() - metadata_start
+        elif confidence_level == "Medium Confidence":
+            is_uncertain = False
+            species_response = predicted_species
+            prediction_reliability = "Medium"
+            confidence_interpretation = "Confidence meets the 70.0% accuracy threshold for moderate reliability."
+            explanation_text = f"Predicted {predicted_species} with {confidence * 100:.2f}% confidence. The prediction is moderately reliable."
+            uncertainty_reason = None
+            
+            # Retrieve standard safety and Taxonomic Metadata
+            metadata_start = time.perf_counter()
+            meta_dict = get_snake_metadata(predicted_species)
+            metadata_duration = time.perf_counter() - metadata_start
+        else:
+            is_uncertain = False
+            species_response = predicted_species
+            prediction_reliability = "High"
+            confidence_interpretation = "Confidence exceeds the 90.0% accuracy threshold determined during validation calibration."
+            explanation_text = f"Predicted {predicted_species} with {confidence * 100:.2f}% confidence. The prediction is highly reliable."
+            uncertainty_reason = None
+            
+            # Retrieve standard safety and Taxonomic Metadata
+            metadata_start = time.perf_counter()
+            meta_dict = get_snake_metadata(predicted_species)
+            metadata_duration = time.perf_counter() - metadata_start
+        
+        # Generate Grad-CAM visualization if available
+        visualization_path = None
+        if gradcam is not None:
+            try:
+                # Load original image as PIL Image
+                from PIL import Image
+                original_img = Image.open(io.BytesIO(image_bytes))
+                
+                # Get predicted class index (using predicted_species)
+                predicted_idx = class_names.index(predicted_species)
+                
+                # Generate heatmap
+                heatmap = gradcam.generate_heatmap(preprocessed, predicted_idx)
+                
+                # Save visualization to predictions directory
+                import uuid
+                from datetime import datetime
+                os.makedirs("predictions", exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                unique_id = uuid.uuid4().hex[:8]
+                vis_filename = f"gradcam_{timestamp}_{unique_id}.png"
+                visualization_path = os.path.abspath(os.path.join("predictions", vis_filename))
+                
+                await run_in_threadpool(gradcam.save_visualization, heatmap, original_img, visualization_path)
+                logger.info(f"Saved Grad-CAM visualization to: {visualization_path}")
+            except Exception as e:
+                logger.error(f"Failed to generate Grad-CAM visualization: {e}", exc_info=e)
+                visualization_path = None
+
         total_duration = time.perf_counter() - start_time
         
         # Round timings to milliseconds
@@ -416,18 +529,28 @@ async def predict_species(
         metadata_lookup_time_ms = round(metadata_duration * 1000, 2)
         total_request_duration_ms = round(total_duration * 1000, 2)
         
-        # Record successful prediction metrics
-        metrics.record_prediction(inference_time_ms, success=True)
+        # Record successful prediction metrics and diagnostics details
+        metrics.record_prediction(
+            inference_time_ms=inference_time_ms,
+            success=True,
+            confidence=confidence,
+            confidence_level=confidence_level,
+            species=species_response,
+            is_uncertain=is_uncertain
+        )
         
         # Log structured prediction request details
         logger.info(
-            f"Prediction completed for {file.filename}: {predicted_species} ({confidence:.4f})",
+            f"Prediction completed for {file.filename}: {species_response} ({confidence:.4f}, {confidence_level})",
             extra={
                 "event": "prediction_request",
                 "uploaded_filename": file.filename,
                 "file_size_bytes": len(image_bytes),
-                "prediction": predicted_species,
+                "prediction": species_response,
                 "confidence": confidence,
+                "confidence_level": confidence_level,
+                "is_uncertain": is_uncertain,
+                "visualization_path": visualization_path,
                 "preprocessing_time_ms": preprocess_time_ms,
                 "inference_time_ms": inference_time_ms,
                 "metadata_lookup_time_ms": metadata_lookup_time_ms,
@@ -436,8 +559,16 @@ async def predict_species(
         )
         
         return PredictionResponse(
-            species=predicted_species,
+            species=species_response,
             confidence=confidence,
+            confidence_level=confidence_level,
+            is_uncertain=is_uncertain,
+            top_predictions=top_predictions,
+            confidence_interpretation=confidence_interpretation,
+            prediction_reliability=prediction_reliability,
+            explanation_text=explanation_text,
+            uncertainty_reason=uncertainty_reason,
+            visualization_path=visualization_path,
             metadata=meta_dict,
             inference_time_ms=inference_time_ms
         )

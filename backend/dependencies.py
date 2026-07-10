@@ -59,3 +59,33 @@ def get_class_names() -> List[str]:
                 status_code=503,
                 detail="Model is not available. Please try again later."
             )
+
+def get_calibrator():
+    """
+    Dependency injector for confidence calibrator.
+    """
+    try:
+        return model_loader.get_calibrator()
+    except RuntimeError:
+        try:
+            return model_loader.load_calibration()
+        except Exception as e:
+            app_logger.error(f"Failed to lazy load calibrator: {e}", exc_info=e)
+            from ml.calibration import ConfidenceCalibrator
+            cal = ConfidenceCalibrator()
+            cal.threshold_high = 0.85
+            cal.threshold_medium = settings.confidence_threshold
+            return cal
+
+def get_gradcam():
+    """
+    Dependency injector for Grad-CAM visualizer.
+    """
+    try:
+        return model_loader.get_gradcam()
+    except RuntimeError:
+        try:
+            return model_loader.load_gradcam()
+        except Exception as e:
+            app_logger.error(f"Failed to lazy load Grad-CAM: {e}", exc_info=e)
+            return None
