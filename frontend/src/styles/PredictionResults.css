@@ -1,0 +1,303 @@
+.results-container {
+  max-width: 680px;
+  margin: 0 auto 2.5rem;
+  padding: 2rem;
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-secondary);
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-muted);
+  padding-bottom: 1.25rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.result-title-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.result-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.predicted-species {
+  font-size: 1.85rem;
+  font-weight: 800;
+  text-transform: capitalize;
+  line-height: 1.1;
+}
+
+.scientific-name {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 1rem;
+  color: var(--text-secondary);
+}
+
+/* Confidence Gauge */
+.confidence-gauge-container {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--bg-primary);
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--border-muted);
+}
+
+.gauge-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.gauge-percentage {
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.gauge-reliability {
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-top: 0.2rem;
+  color: var(--text-secondary);
+}
+
+.badge-level {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-weight: 700;
+  display: inline-block;
+  margin-top: 0.25rem;
+  text-transform: uppercase;
+}
+
+/* Status Panels */
+.venomous-alert {
+  background: var(--color-danger-bg);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-left: 3px solid var(--color-danger);
+  padding: 0.75rem 1rem;
+  border-radius: var(--border-radius-md);
+  margin-bottom: 1.5rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.venomous-icon {
+  font-size: 1.35rem;
+}
+
+.venomous-text h4 {
+  color: var(--color-danger);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.venomous-text p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.safe-badge {
+  background: var(--color-safe-bg);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  border-left: 3px solid var(--color-safe);
+  padding: 0.75rem 1rem;
+  border-radius: var(--border-radius-md);
+  margin-bottom: 1.5rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.safe-icon {
+  font-size: 1.35rem;
+}
+
+.safe-text h4 {
+  color: var(--color-safe);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.safe-text p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* Uncertainty Banner */
+.uncertainty-banner {
+  background: var(--color-warning-bg);
+  border: 1px solid rgba(234, 179, 8, 0.2);
+  border-left: 3px solid var(--color-warning);
+  padding: 1rem;
+  border-radius: var(--border-radius-md);
+  margin-bottom: 1.5rem;
+}
+
+.uncertainty-banner h4 {
+  color: var(--color-warning);
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.uncertainty-banner p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* Details Section Grid */
+.details-section {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.detail-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.detail-block h4 {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.detail-block p {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.detail-block.full-width {
+  grid-column: span 2;
+}
+
+/* First aid panel */
+.first-aid-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-muted);
+  padding: 1rem 1.25rem;
+  border-radius: var(--border-radius-md);
+  margin-top: 0.25rem;
+}
+
+.first-aid-steps {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  white-space: pre-line;
+  line-height: 1.6;
+}
+
+/* Alternative Predictions */
+.alternatives-card {
+  border-top: 1px solid var(--border-muted);
+  padding-top: 1.5rem;
+}
+
+.alternatives-card h4 {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.alternatives-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.alternative-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-muted);
+}
+
+.alt-species {
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.alt-bar-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 50%;
+}
+
+.alt-progress-bg {
+  flex: 1;
+  height: 5px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.alt-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+}
+
+.alt-percent {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  width: 35px;
+  text-align: right;
+}
+
+.inference-badge {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .results-container {
+    padding: 1.25rem;
+    margin: 0 0 1.5rem;
+  }
+  
+  .details-section {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .detail-block.full-width {
+    grid-column: span 1;
+  }
+  
+  .alt-bar-wrapper {
+    width: 60%;
+  }
+}

@@ -1,0 +1,140 @@
+.hero-container {
+  margin-bottom: 4rem;
+}
+
+.hero-layout {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 3.5rem;
+  align-items: center;
+  padding: 3rem 0;
+}
+
+.hero-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.25rem;
+}
+
+.hero-heading {
+  font-size: 2.5rem;
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.hero-description {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.btn-upload-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background-color: var(--color-primary);
+  color: var(--bg-primary);
+  font-weight: 700;
+  font-size: 0.95rem;
+  border-radius: var(--border-radius-md);
+  margin-top: 0.5rem;
+  transition: all var(--transition-fast);
+}
+
+.btn-upload-trigger:hover {
+  background-color: var(--color-primary-hover);
+  transform: translateY(-1px);
+}
+
+/* Right-side Visual Area */
+.hero-right {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.snake-visual-placeholder {
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--border-radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  position: relative;
+  overflow: hidden;
+}
+
+.snake-visual-placeholder svg {
+  width: 60%;
+  height: 60%;
+  opacity: 0.85;
+}
+
+/* Compact Horizontal Feature Row */
+.features-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  border-top: 1px solid var(--border-muted);
+  padding-top: 2.5rem;
+  margin-top: 1rem;
+}
+
+.feature-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.5rem;
+}
+
+.feature-icon-wrapper {
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+}
+
+.feature-item-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.feature-item-text {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .hero-layout {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+    padding: 2rem 0;
+  }
+  
+  .hero-right {
+    order: -1; /* Place visual on top on mobile */
+  }
+
+  .snake-visual-placeholder {
+    max-width: 240px;
+  }
+
+  .hero-heading {
+    font-size: 2rem;
+  }
+  
+  .features-row {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    padding-top: 2rem;
+  }
+}
