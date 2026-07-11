@@ -5,12 +5,13 @@ import ImageUploader from './components/ImageUploader';
 import PredictionResults from './components/PredictionResults';
 import SafetyDisclaimer from './components/SafetyDisclaimer';
 import Footer from './components/Footer';
+import { apiService, normalizeApiError } from './services/api';
 import { validateImageFile } from './utils/validation';
 import './styles/App.css';
 
 /**
  * App Component
- * Orchestrates page composition, uploader refs, and core application state.
+ * Orchestrates main sections and state (loading, error, upload, results).
  */
 export default function App() {
   const [file, setFile] = useState(null);
@@ -18,6 +19,7 @@ export default function App() {
   const [validationError, setValidationError] = useState(null);
   const [prediction, setPrediction] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const uploaderRef = useRef(null);
 
@@ -40,8 +42,6 @@ export default function App() {
   const handleScrollToUploader = () => {
     if (uploaderRef.current) {
       uploaderRef.current.scrollIntoView({ behavior: 'smooth' });
-      
-      // Accessibility focus: focus either the dropzone (if no file) or the primary analyze button
       const focusTarget = uploaderRef.current.querySelector('.dropzone, .btn-primary');
       focusTarget?.focus();
     }
@@ -50,6 +50,7 @@ export default function App() {
   const handleFileSelect = (selectedFile) => {
     setValidationError(null);
     setPrediction(null);
+    setError(null);
 
     if (!selectedFile) {
       setFile(null);
@@ -70,11 +71,23 @@ export default function App() {
     setFile(null);
     setValidationError(null);
     setPrediction(null);
+    setError(null);
   };
 
-  const handleAnalyzeSpecimen = (selectedFile) => {
-    // Placeholder handler for future Sprint 7 prediction integration
-    console.log("Analyzing specimen file placeholder:", selectedFile.name, selectedFile.size);
+  const handleUpload = async (imageFile) => {
+    setIsLoading(true);
+    setError(null);
+    setPrediction(null);
+    
+    try {
+      const response = await apiService.predictImage(imageFile);
+      setPrediction(response);
+    } catch (err) {
+      const normalized = normalizeApiError(err);
+      setError(normalized.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -84,8 +97,14 @@ export default function App() {
       <main className="main-content">
         <Hero onUploadClick={handleScrollToUploader} />
         
+        {error && (
+          <div className="error-banner" role="alert" aria-live="assertive">
+            ⚠️ {error}
+          </div>
+        )}
+        
         <ImageUploader 
-          onUpload={handleAnalyzeSpecimen}
+          onUpload={handleUpload}
           onClear={handleFileClear}
           onFileSelect={handleFileSelect}
           validationError={validationError}

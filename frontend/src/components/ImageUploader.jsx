@@ -86,14 +86,19 @@ export default function ImageUploader({
     }
   };
 
-  const loadDemo = (type) => {
-    let fileName = "cobra_demo.jpg";
-    if (type === "garter") fileName = "garter_safe_demo.jpg";
-    if (type === "uncertain") fileName = "uncertain_demo.jpg";
+  const loadDemo = async (type) => {
+    let fileName = "cobra_demo.png";
+    if (type === "krait") fileName = "krait_demo.png";
+    if (type === "uncertain") fileName = "uncertain_demo.png";
 
-    const demoBlob = new Blob(["demo-binary-data"], { type: "image/jpeg" });
-    const demoFile = new File([demoBlob], fileName, { type: "image/jpeg" });
-    onFileSelect(demoFile);
+    try {
+      const response = await fetch(`/${fileName}`);
+      const blob = await response.blob();
+      const demoFile = new File([blob], fileName, { type: blob.type });
+      onFileSelect(demoFile);
+    } catch (error) {
+      console.error("Failed to load demo image:", error);
+    }
   };
 
   return (
@@ -155,12 +160,17 @@ export default function ImageUploader({
               {isLoading ? (
                 <>
                   <div className="spinner"></div>
-                  <span>Running classification model...</span>
+                  <span>Analyzing image...</span>
                 </>
               ) : (
                 <span>Analyze snake</span>
               )}
             </button>
+            {isLoading && (
+              <p className="loading-helper-text" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                This may take a few seconds.
+              </p>
+            )}
             
             <button 
               className="btn-secondary" 
@@ -196,8 +206,8 @@ export default function ImageUploader({
           <button className="btn-demo" onClick={() => loadDemo('cobra')}>
             Cobra
           </button>
-          <button className="btn-demo" onClick={() => loadDemo('garter')}>
-            Garter Snake
+          <button className="btn-demo" onClick={() => loadDemo('krait')}>
+            Krait
           </button>
           <button className="btn-demo" onClick={() => loadDemo('uncertain')}>
             Uncertain
