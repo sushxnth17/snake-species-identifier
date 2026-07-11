@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
+import { formatBytes } from '../utils/format';
 import '../styles/ImageUploader.css';
 
 /**
@@ -8,26 +9,25 @@ import '../styles/ImageUploader.css';
  * @param {Object} props
  * @param {Function} props.onUpload - Triggers when prediction is requested.
  * @param {Function} props.onClear - Clears results.
- * @param {Boolean} props.isLoading - Whether classification is running.
- * @param {File} props.file - Currently selected file.
- * @param {Function} props.setFile - Updates selected file state.
+ * @param {Function} props.onFileSelect - Validates and handles selected files.
+ * @param {String|null} props.validationError - Validation error message to display.
+ * @param {File|null} props.file - Currently selected file.
+ * @param {String|null} props.previewUrl - The preview URL generated from the selected file.
  * @param {React.RefObject} props.innerRef - Ref attached to the main uploader container.
+ * @param {Boolean} props.isLoading - Loading state toggle.
  */
-export default function ImageUploader({ onUpload, onClear, isLoading, file, setFile, innerRef }) {
+export default function ImageUploader({ 
+  onUpload, 
+  onClear, 
+  onFileSelect, 
+  validationError, 
+  file, 
+  previewUrl, 
+  innerRef, 
+  isLoading 
+}) {
   const [dragActive, setDragActive] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState(null);
   const fileInputRef = useRef(null);
-
-  // Sync preview url
-  useEffect(() => {
-    if (!file) {
-      setPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -43,33 +43,17 @@ export default function ImageUploader({ onUpload, onClear, isLoading, file, setF
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
+    
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      validateAndSetFile(e.dataTransfer.files[0]);
+      onFileSelect(e.dataTransfer.files[0]);
     }
   };
 
   const handleChange = (e) => {
     e.preventDefault();
     if (e.target.files && e.target.files[0]) {
-      validateAndSetFile(e.target.files[0]);
+      onFileSelect(e.target.files[0]);
     }
-  };
-
-  const validateAndSetFile = (selectedFile) => {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    const maxSizeBytes = 5 * 1024 * 1024; // 5MB
-
-    if (!allowedTypes.includes(selectedFile.type)) {
-      alert("Invalid format. Please select a JPEG, PNG, or WebP image file.");
-      return;
-    }
-
-    if (selectedFile.size > maxSizeBytes) {
-      alert("Selected file exceeds the 5MB size limit.");
-      return;
-    }
-
-    setFile(selectedFile);
   };
 
   const triggerFileInput = () => {
@@ -85,11 +69,15 @@ export default function ImageUploader({ onUpload, onClear, isLoading, file, setF
 
   const handleClear = (e) => {
     e.stopPropagation();
-    setFile(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
     onClear();
+  };
+
+  const handleReplace = (e) => {
+    e.stopPropagation();
+    triggerFileInput();
   };
 
   const handleAnalyze = () => {
@@ -105,7 +93,7 @@ export default function ImageUploader({ onUpload, onClear, isLoading, file, setF
 
     const demoBlob = new Blob(["demo-binary-data"], { type: "image/jpeg" });
     const demoFile = new File([demoBlob], fileName, { type: "image/jpeg" });
-    setFile(demoFile);
+    onFileSelect(demoFile);
   };
 
   return (
@@ -138,7 +126,11 @@ export default function ImageUploader({ onUpload, onClear, isLoading, file, setF
       ) : (
         <div className="preview-container">
           <div className="preview-wrapper">
-            <img src={previewUrl} alt="Uploaded snake specimen preview" className="preview-image" />
+            <img 
+              src={previewUrl} 
+              alt="Selected snake specimen preview" 
+              className="preview-image" 
+            />
             <button 
               className="clear-btn" 
               onClick={handleClear} 
@@ -147,6 +139,11 @@ export default function ImageUploader({ onUpload, onClear, isLoading, file, setF
             >
               &times;
             </button>
+          </div>
+
+          <div className="preview-metadata">
+            <span className="preview-filename">{file.name}</span>
+            <span className="preview-filesize">({formatBytes(file.size)})</span>
           </div>
           
           <div className="action-buttons">
@@ -161,10 +158,30 @@ export default function ImageUploader({ onUpload, onClear, isLoading, file, setF
                   <span>Running classification model...</span>
                 </>
               ) : (
-                <span>Identify Species</span>
+                <span>Analyze snake</span>
               )}
             </button>
+            
+            <button 
+              className="btn-secondary" 
+              onClick={handleReplace} 
+              disabled={isLoading}
+              aria-label="Replace selected image"
+            >
+              Replace image
+            </button>
           </div>
+        </div>
+      )}
+
+      {/* Validation Error Banner (Live region for screen readers) */}
+      {validationError && (
+        <div 
+          className="validation-error" 
+          role="alert" 
+          aria-live="assertive"
+        >
+          ⚠️ {validationError}
         </div>
       )}
 

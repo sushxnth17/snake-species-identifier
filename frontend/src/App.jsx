@@ -1,11 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Header from './components/Header';
 import Hero from './components/Hero';
 import ImageUploader from './components/ImageUploader';
 import PredictionResults from './components/PredictionResults';
 import SafetyDisclaimer from './components/SafetyDisclaimer';
 import Footer from './components/Footer';
-import { apiService } from './services/api';
+import { validateImageFile } from './utils/validation';
 import './styles/App.css';
 
 /**
@@ -14,11 +14,28 @@ import './styles/App.css';
  */
 export default function App() {
   const [file, setFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [validationError, setValidationError] = useState(null);
   const [prediction, setPrediction] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
 
   const uploaderRef = useRef(null);
+
+  // Manage preview URL lifecycle reactive to the selected file to prevent memory leaks
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+
+    // Cleanup: revoke object URL when file changes or component unmounts
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [file]);
 
   const handleScrollToUploader = () => {
     if (uploaderRef.current) {
@@ -30,26 +47,34 @@ export default function App() {
     }
   };
 
-  const handleUpload = async (imageFile) => {
-    setIsLoading(true);
-    setError(null);
+  const handleFileSelect = (selectedFile) => {
+    setValidationError(null);
     setPrediction(null);
-    
-    try {
-      const response = await apiService.predictImage(imageFile);
-      setPrediction(response);
-    } catch (err) {
-      console.error("Prediction analysis failed:", err);
-      const errMsg = err?.error?.message || "An unexpected error occurred during classification.";
-      setError(errMsg);
-    } finally {
-      setIsLoading(false);
+
+    if (!selectedFile) {
+      setFile(null);
+      return;
     }
+
+    const validation = validateImageFile(selectedFile);
+    if (!validation.isValid) {
+      setFile(null);
+      setValidationError(validation.error);
+      return;
+    }
+
+    setFile(selectedFile);
   };
 
-  const handleClear = () => {
+  const handleFileClear = () => {
+    setFile(null);
+    setValidationError(null);
     setPrediction(null);
-    setError(null);
+  };
+
+  const handleAnalyzeSpecimen = (selectedFile) => {
+    // Placeholder handler for future Sprint 7 prediction integration
+    console.log("Analyzing specimen file placeholder:", selectedFile.name, selectedFile.size);
   };
 
   return (
@@ -59,19 +84,15 @@ export default function App() {
       <main className="main-content">
         <Hero onUploadClick={handleScrollToUploader} />
         
-        {error && (
-          <div className="error-banner" role="alert">
-            ⚠️ {error}
-          </div>
-        )}
-        
         <ImageUploader 
-          onUpload={handleUpload}
-          onClear={handleClear}
-          isLoading={isLoading}
+          onUpload={handleAnalyzeSpecimen}
+          onClear={handleFileClear}
+          onFileSelect={handleFileSelect}
+          validationError={validationError}
           file={file}
-          setFile={setFile}
+          previewUrl={previewUrl}
           innerRef={uploaderRef}
+          isLoading={isLoading}
         />
         
         {prediction && (
