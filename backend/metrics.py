@@ -24,6 +24,12 @@ class DiagnosticsMetrics:
         }
         self.species_counts: Dict[str, int] = {}
         self.uncertain_predictions_count: int = 0
+        
+        # Enrichment diagnostics counters
+        self.enrichment_requests = 0
+        self.enrichment_cache_hits = 0
+        self.enrichment_cache_misses = 0
+        self.enrichment_failures = 0
 
     def record_prediction(
         self,
@@ -62,6 +68,19 @@ class DiagnosticsMetrics:
                     self.uncertain_predictions_count += 1
             else:
                 self.failed_predictions += 1
+
+    def record_enrichment(self, hit: bool, success: bool) -> None:
+        """
+        Atomically updates species enrichment diagnostics metrics.
+        """
+        with self._lock:
+            self.enrichment_requests += 1
+            if hit:
+                self.enrichment_cache_hits += 1
+            else:
+                self.enrichment_cache_misses += 1
+            if not success:
+                self.enrichment_failures += 1
 
     @property
     def uptime(self) -> float:

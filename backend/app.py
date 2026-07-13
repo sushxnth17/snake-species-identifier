@@ -597,6 +597,16 @@ async def predict_species(
             }
         )
         
+        # Fetch enrichment details only for confident predictions
+        enrichment = None
+        if not is_uncertain:
+            try:
+                from backend.species_enrichment import get_species_enrichment
+                enrichment = get_species_enrichment(predicted_species)
+            except Exception as e:
+                logger.error(f"Failed to fetch species enrichment for {predicted_species}: {e}", exc_info=e)
+                enrichment = None
+
         return PredictionResponse(
             species=species_response,
             confidence=confidence,
@@ -609,6 +619,7 @@ async def predict_species(
             uncertainty_reason=uncertainty_reason,
             visualization_path=relative_visualization_path,
             metadata=meta_dict,
+            enrichment=enrichment,
             inference_time_ms=inference_time_ms
         )
     except Exception as e:

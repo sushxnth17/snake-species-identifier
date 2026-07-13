@@ -49,6 +49,33 @@ class TopPrediction(BaseModel):
         description="Confidence score of the ranked prediction."
     )
 
+class SpeciesEnrichment(BaseModel):
+    overview: str = Field(
+        ...,
+        description="A concise herpetological overview of the species, approximately 2 to 4 sentences.",
+        examples=["The spectacled cobra is a venomous snake species found in India. It is easily recognized by its hood."]
+    )
+    habitats: List[str] = Field(
+        ...,
+        description="Common habitat types for this species.",
+        examples=[["grasslands", "deciduous forests"]]
+    )
+    appearance: List[str] = Field(
+        ...,
+        description="Commonly described physical traits of the species (for educational purposes only).",
+        examples=[["signature hood", "spectacled markings"]]
+    )
+    behavior: str = Field(
+        ...,
+        description="A concise description of the species' typical behavior.",
+        examples=["Nocturnal, typically docile unless cornered."]
+    )
+    interesting_facts: List[str] = Field(
+        ...,
+        description="A list of interesting and educational herpetological facts.",
+        examples=[["Known for its iconic defensive posture"]]
+    )
+
 class PredictionResponse(BaseModel):
     species: str = Field(
         ...,
@@ -97,6 +124,10 @@ class PredictionResponse(BaseModel):
     metadata: SnakeMetadata = Field(
         ...,
         description="Taxonomic and safety guidelines metadata corresponding to the predicted species."
+    )
+    enrichment: Optional[SpeciesEnrichment] = Field(
+        default=None,
+        description="Structured educational herpetological information about the predicted species, if available."
     )
     inference_time_ms: float = Field(
         ...,

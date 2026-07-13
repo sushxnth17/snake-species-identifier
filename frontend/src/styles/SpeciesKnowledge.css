@@ -1,0 +1,113 @@
+/* ==========================================================================
+   SpeciesKnowledge Card Stylesheet
+   Responsiveness, nature-themed design tokens, and clear layout separation.
+   ========================================================================== */
+
+.species-knowledge-container {
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--border-muted);
+  padding-top: 2rem;
+  box-sizing: border-box;
+}
+
+.knowledge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.knowledge-heading {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.knowledge-badge {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  background: var(--color-primary-glow);
+  border: 1px solid var(--border-muted);
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--border-radius-sm);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.knowledge-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.knowledge-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.knowledge-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .knowledge-grid {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
+.knowledge-grid-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.knowledge-section-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  display: block;
+}
+
+.knowledge-text {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.knowledge-list {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.knowledge-list-item {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.knowledge-footer {
+  margin-top: 1.5rem;
+  border-top: 1px dashed var(--border-muted);
+  padding-top: 0.85rem;
+}
+
+.knowledge-disclaimer {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+}

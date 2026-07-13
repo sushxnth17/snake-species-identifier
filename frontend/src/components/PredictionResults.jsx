@@ -4,6 +4,7 @@ import VenomStatus from './VenomStatus';
 import TopPredictions from './TopPredictions';
 import SpeciesDetails from './SpeciesDetails';
 import ExplainabilityViewer from './ExplainabilityViewer';
+import SpeciesKnowledge from './SpeciesKnowledge';
 import '../styles/PredictionResults.css';
 
 /**
@@ -38,6 +39,7 @@ export default function PredictionResults({ result, previewUrl }) {
     uncertainty_reason,
     visualization_path,
     metadata,
+    enrichment,
     inference_time_ms
   } = result;
 
@@ -127,6 +129,19 @@ export default function PredictionResults({ result, previewUrl }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Species Knowledge Enrichment Section */}
+      {enrichment ? (
+        <SpeciesKnowledge enrichment={enrichment} />
+      ) : (
+        !is_uncertain && (
+          <div className="species-knowledge-container animate-fade">
+            <p className="knowledge-disclaimer">
+              Additional species information isn't available right now.
+            </p>
+          </div>
+        )
       )}
 
       {/* Explainability Section */}
