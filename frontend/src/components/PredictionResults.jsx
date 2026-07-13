@@ -56,9 +56,9 @@ export default function PredictionResults({ result, previewUrl }) {
         <div className="uncertain-results-wrapper">
           <header className="results-header">
             <span className="results-pre-title" id="results-title">Analysis Result</span>
-            <h3 className="primary-identification-heading warning-text">
+            <h2 className="primary-identification-heading warning-text">
               Uncertain identification
-            </h3>
+            </h2>
             <p className="uncertainty-explanation">
               {uncertainty_reason || explanation_text || 'The model was unable to classify the species with sufficient confidence.'}
             </p>
@@ -94,9 +94,9 @@ export default function PredictionResults({ result, previewUrl }) {
         <div className="confident-results-wrapper">
           <header className="results-header">
             <span className="results-pre-title" id="results-title">Most likely</span>
-            <h3 className="primary-identification-heading text-capitalize">
+            <h2 className="primary-identification-heading text-capitalize">
               {metadata?.common_name || species}
-            </h3>
+            </h2>
             {metadata?.scientific_name && (
               <p className="primary-scientific-subtitle">
                 {metadata.scientific_name}

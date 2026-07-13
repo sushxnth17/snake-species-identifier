@@ -27,7 +27,7 @@ export default function ExplainabilityViewer({ visualizationPath, previewUrl, is
   if (!visualizationPath) {
     return (
       <section className="explainability-section">
-        <h4 className="explainability-heading">What did the model look at?</h4>
+        <h3 className="explainability-heading">What did the model look at?</h3>
         <div className="explainability-fallback-container">
           <p className="explainability-fallback" role="alert">
             <span>⚠️</span> Model attention view isn't available for this prediction.
@@ -46,7 +46,7 @@ export default function ExplainabilityViewer({ visualizationPath, previewUrl, is
 
   return (
     <section className="explainability-section">
-      <h4 className="explainability-heading">What did the model look at?</h4>
+      <h3 className="explainability-heading">What did the model look at?</h3>
       <p className="explainability-description">{descriptionText}</p>
 
       {imageState === 'error' ? (

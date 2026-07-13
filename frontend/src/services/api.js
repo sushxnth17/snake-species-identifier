@@ -68,9 +68,21 @@ export const apiService = {
    * @param {File} file - Valid selected snake image file
    * @returns {Promise<Object>} - Resolves to success response payload
    */
-  async predictImage(file) {
+  async predictImage(file, signal) {
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+
+    if (signal) {
+      signal.addEventListener('abort', onAbort);
+    }
 
     try {
       // Get base API URL from Vite environment, fallback to the same-origin '/api' proxy
@@ -90,6 +102,9 @@ export const apiService = {
       });
 
       clearTimeout(timeoutId);
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+      }
 
       // Extract Request ID header
       const requestId = response.headers.get("X-Request-ID");
@@ -114,6 +129,9 @@ export const apiService = {
 
     } catch (error) {
       clearTimeout(timeoutId);
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+      }
       
       // Handle timeout abortion
       if (error.name === 'AbortError') {
@@ -143,7 +161,7 @@ export const apiService = {
    */
   async checkHealth() {
     try {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
       const sanitizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
       const response = await fetch(`${sanitizedBaseUrl}/health`);
       if (response.ok) return await response.json();
@@ -170,7 +188,7 @@ export function resolveImageUrl(relativePath) {
   }
   
   // Get base API URL from Vite environment, fallback to the same-origin '/api' proxy
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
   const sanitizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
   const sanitizedRelative = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
   

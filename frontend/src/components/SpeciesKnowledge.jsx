@@ -17,7 +17,7 @@ export default function SpeciesKnowledge({ enrichment }) {
   return (
     <div className="species-knowledge-container animate-fade">
       <header className="knowledge-header">
-        <h4 className="knowledge-heading">About this species</h4>
+        <h3 className="knowledge-heading">About this species</h3>
         <span className="knowledge-badge">AI-generated educational summary</span>
       </header>
 

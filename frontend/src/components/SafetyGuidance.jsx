@@ -24,24 +24,24 @@ export default function SafetyGuidance({ metadata, isUncertain }) {
   if (isUncertain) {
     cardClass = 'safety-uncertain';
     heading = 'Identification is uncertain';
-    adviceText = 'The model could not identify this snake with enough confidence. Treat it as potentially dangerous and keep your distance.';
-    emergencyAction = 'Seek medical attention immediately. Do not wait for a more confident identification.';
+    adviceText = 'The model could not identify this snake with enough confidence. Treat it as potentially dangerous and keep your distance. Do not attempt to touch, handle, or capture the snake.';
+    emergencyAction = 'Seek emergency medical attention immediately. Do not wait for a more confident identification.';
   } else if (venomous) {
     cardClass = 'safety-venomous';
-    heading = 'Venomous snake predicted';
-    adviceText = 'Keep your distance and do not attempt to handle or capture the snake.';
+    heading = 'Predicted as venomous';
+    adviceText = 'Keep your distance. Do not attempt to touch, handle, or capture the snake.';
     emergencyAction = 'Seek emergency medical attention immediately. Do not wait for the identification result before getting help.';
   } else {
     cardClass = 'safety-non-venomous';
     heading = 'Predicted as non-venomous';
-    adviceText = 'AI identification can be wrong. Avoid handling the snake and keep a safe distance.';
-    emergencyAction = 'Seek medical attention. Do not ignore a bite, even from a non-venomous species, as it may cause infection or allergic reactions.';
+    adviceText = 'AI identification can be wrong. Do not attempt to touch, handle, or capture the snake. Keep a safe distance.';
+    emergencyAction = 'Seek medical attention. Do not ignore a bite, even from a predicted non-venomous species, as it may cause infection or allergic reactions.';
   }
 
   return (
     <div className={`safety-guidance-card ${cardClass} animate-fade`}>
       <header className="safety-header">
-        <h4 className="safety-heading">{heading}</h4>
+        <h3 className="safety-heading">{heading}</h3>
         <span className="safety-badge">Safety Guidance</span>
       </header>
 
