@@ -5,6 +5,7 @@ import TopPredictions from './TopPredictions';
 import SpeciesDetails from './SpeciesDetails';
 import ExplainabilityViewer from './ExplainabilityViewer';
 import SpeciesKnowledge from './SpeciesKnowledge';
+import SafetyGuidance from './SafetyGuidance';
 import '../styles/PredictionResults.css';
 
 /**
@@ -129,6 +130,11 @@ export default function PredictionResults({ result, previewUrl }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Safety Guidance Section */}
+      {metadata && (
+        <SafetyGuidance metadata={metadata} isUncertain={is_uncertain} />
       )}
 
       {/* Species Knowledge Enrichment Section */}

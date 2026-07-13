@@ -38,6 +38,16 @@ class SnakeMetadata(BaseModel):
             "5. DO NOT cut the bite site, apply a tourniquet, or try to suck out the venom."
         ]
     )
+    first_aid_steps: List[str] = Field(
+        ...,
+        description="Sequential list of first-aid actions to perform.",
+        examples=[["Keep the victim calm.", "Immobilize the bitten limb."]]
+    )
+    avoid_actions: List[str] = Field(
+        ...,
+        description="Actions the user must avoid to prevent worsening the condition.",
+        examples=[["DO NOT cut the bite site.", "DO NOT apply a tourniquet."]]
+    )
 
 class TopPrediction(BaseModel):
     species: str = Field(

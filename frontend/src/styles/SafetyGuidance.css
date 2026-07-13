@@ -1,0 +1,191 @@
+/* ==========================================================================
+   SafetyGuidance Component Stylesheet
+   Accessibility-compliant coloring, layout, and responsiveness.
+   ========================================================================== */
+
+.safety-guidance-card {
+  border: 1px solid var(--border-muted);
+  border-radius: var(--border-radius-lg);
+  padding: 1.5rem;
+  background: var(--bg-surface);
+  box-sizing: border-box;
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* State-specific visual borders and background hues */
+.safety-guidance-card.safety-venomous {
+  border-left: 6px solid #e11d48; /* Red-600 */
+  background: linear-gradient(to right, rgba(225, 29, 72, 0.03), transparent);
+}
+
+.safety-guidance-card.safety-uncertain {
+  border-left: 6px solid #d97706; /* Amber-600 */
+  background: linear-gradient(to right, rgba(217, 119, 6, 0.03), transparent);
+}
+
+.safety-guidance-card.safety-non-venomous {
+  border-left: 6px solid #059669; /* Emerald-600 */
+  background: linear-gradient(to right, rgba(5, 150, 105, 0.03), transparent);
+}
+
+.safety-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.safety-heading {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.safety-badge {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--border-radius-sm);
+  background: var(--border-muted);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-muted);
+}
+
+.safety-venomous .safety-badge {
+  background: rgba(225, 29, 72, 0.1);
+  color: #f43f5e;
+  border-color: rgba(225, 29, 72, 0.2);
+}
+
+.safety-uncertain .safety-badge {
+  background: rgba(217, 119, 6, 0.1);
+  color: #fbbf24;
+  border-color: rgba(217, 119, 6, 0.2);
+}
+
+.safety-non-venomous .safety-badge {
+  background: rgba(5, 150, 105, 0.1);
+  color: #34d399;
+  border-color: rgba(5, 150, 105, 0.2);
+}
+
+.safety-advice {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.safety-emergency-banner {
+  background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.03));
+  border: 1px dashed var(--border-muted);
+  border-radius: var(--border-radius-md);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.safety-venomous .safety-emergency-banner {
+  border-color: rgba(225, 29, 72, 0.3);
+  background: rgba(225, 29, 72, 0.02);
+}
+
+.safety-uncertain .safety-emergency-banner {
+  border-color: rgba(217, 119, 6, 0.3);
+  background: rgba(217, 119, 6, 0.02);
+}
+
+.emergency-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.safety-venomous .emergency-label {
+  color: #f43f5e;
+}
+
+.safety-uncertain .emergency-label {
+  color: #fbbf24;
+}
+
+.emergency-text {
+  font-size: 0.95rem;
+  line-height: 1.45;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.safety-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.safety-section-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  display: block;
+}
+
+.safety-section-title.avoid-title {
+  color: #f43f5e;
+}
+
+.safety-first-aid-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.safety-avoid-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  list-style-type: disc;
+}
+
+.safety-list-item {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.safety-footer {
+  border-top: 1px solid var(--border-muted);
+  padding-top: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+.safety-disclaimer-note {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+@media (max-width: 480px) {
+  .safety-guidance-card {
+    padding: 1.25rem;
+  }
+}
