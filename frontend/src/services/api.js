@@ -153,3 +153,26 @@ export const apiService = {
     return { api_status: "unknown", model_loaded: false };
   }
 };
+
+/**
+ * Resolves a relative image URL against the VITE_API_BASE_URL config.
+ * Handles leading and trailing slashes correctly.
+ *
+ * @param {string} relativePath - The relative path returned by the backend.
+ * @returns {string|null} - The absolute URL or null if relativePath is falsy.
+ */
+export function resolveImageUrl(relativePath) {
+  if (!relativePath) return null;
+  
+  // If already an absolute URL, return as is
+  if (relativePath.startsWith('http://') || relativePath.startsWith('https://')) {
+    return relativePath;
+  }
+  
+  // Get base API URL from Vite environment, fallback to the same-origin '/api' proxy
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+  const sanitizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  const sanitizedRelative = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+  
+  return `${sanitizedBase}/${sanitizedRelative}`;
+}

@@ -115,7 +115,7 @@ export default function App() {
         />
         
         {prediction && (
-          <PredictionResults result={prediction} />
+          <PredictionResults result={prediction} previewUrl={previewUrl} />
         )}
         
         <SafetyDisclaimer />

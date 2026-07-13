@@ -3,6 +3,7 @@ import ConfidenceIndicator from './ConfidenceIndicator';
 import VenomStatus from './VenomStatus';
 import TopPredictions from './TopPredictions';
 import SpeciesDetails from './SpeciesDetails';
+import ExplainabilityViewer from './ExplainabilityViewer';
 import '../styles/PredictionResults.css';
 
 /**
@@ -13,7 +14,7 @@ import '../styles/PredictionResults.css';
  * @param {Object} props
  * @param {Object} props.result - Complete FastAPI PredictionResponse object
  */
-export default function PredictionResults({ result }) {
+export default function PredictionResults({ result, previewUrl }) {
   const containerRef = useRef(null);
 
   // Automatically scroll and move keyboard focus to the results container for screen readers
@@ -35,6 +36,7 @@ export default function PredictionResults({ result }) {
     confidence_interpretation,
     explanation_text,
     uncertainty_reason,
+    visualization_path,
     metadata,
     inference_time_ms
   } = result;
@@ -126,6 +128,13 @@ export default function PredictionResults({ result }) {
           </div>
         </div>
       )}
+
+      {/* Explainability Section */}
+      <ExplainabilityViewer
+        visualizationPath={visualization_path}
+        previewUrl={previewUrl}
+        isUncertain={is_uncertain}
+      />
 
       {/* Footer Benchmark Analytics */}
       <footer className="results-footer">

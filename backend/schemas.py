@@ -91,8 +91,8 @@ class PredictionResponse(BaseModel):
     )
     visualization_path: Optional[str] = Field(
         default=None,
-        description="The absolute path to the saved Grad-CAM visualization image, if generated.",
-        examples=["C:\\Users\\susha\\OneDrive\\Desktop\\snake\\predictions\\gradcam_20260710_123456.png"]
+        description="The relative URL path to the saved Grad-CAM visualization image, if generated.",
+        examples=["predictions/gradcam_20260710_123456.png"]
     )
     metadata: SnakeMetadata = Field(
         ...,
