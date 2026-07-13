@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from pydantic import BaseModel, Field, field_validator, ValidationError
 
 # Base paths
@@ -92,6 +92,22 @@ class Settings(BaseModel):
         default="INFO",
         description="Application logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
     )
+    groq_api_key: Optional[str] = Field(
+        default=None,
+        description="Groq API key for species enrichment"
+    )
+    groq_model: str = Field(
+        default="llama-3.3-70b-versatile",
+        description="Groq model name to use for species enrichment"
+    )
+    groq_enrichment_enabled: bool = Field(
+        default=True,
+        description="Enable or disable Groq species enrichment"
+    )
+    groq_timeout: float = Field(
+        default=10.0,
+        description="Groq API request timeout in seconds"
+    )
 
     @field_validator("logging_level")
     @classmethod
@@ -148,6 +164,19 @@ def load_settings() -> Settings:
     Loads configuration settings from environment variables.
     Environment variables map to uppercase fields of the Settings model.
     """
+    # Load configurations from a local .env file in the project root if it exists
+    dotenv_path = os.path.join(BASE_DIR, ".env")
+    if os.path.exists(dotenv_path):
+        try:
+            with open(dotenv_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ[k.strip()] = v.strip().strip("'\"")
+        except Exception:
+            pass
+
     settings_dict = {}
     
     for field_name, field_info in Settings.model_fields.items():

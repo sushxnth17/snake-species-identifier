@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Depends, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -357,6 +357,42 @@ def get_diagnostics(
     )
     return metrics.get_diagnostics()
 
+@app.get(
+    "/predictions/{filename}",
+    summary="Retrieve Grad-CAM visualization image",
+    description="Serves the saved Grad-CAM overlay image from the predictions directory.",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"image/png": {}},
+            "description": "The Grad-CAM overlay image."
+        },
+        404: {
+            "description": "Image not found."
+        },
+        500: {
+            "description": "Failed to read the image file."
+        }
+    }
+)
+def get_prediction_image(filename: str):
+    """
+    Safely retrieves a saved Grad-CAM image from the predictions directory.
+    Sanitizes the filename to prevent directory traversal.
+    """
+    clean_filename = os.path.basename(filename)
+    file_path = os.path.join("predictions", clean_filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Image not found")
+        
+    try:
+        with open(file_path, "rb") as f:
+            content = f.read()
+        return Response(content=content, media_type="image/png")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read image: {str(e)}")
+
 @app.post(
     "/predict",
     dependencies=[Depends(check_rate_limit_dependency)],
@@ -494,6 +530,7 @@ async def predict_species(
         
         # Generate Grad-CAM visualization if available
         visualization_path = None
+        relative_visualization_path = None
         if gradcam is not None:
             try:
                 # Load original image as PIL Image
@@ -517,9 +554,11 @@ async def predict_species(
                 
                 await run_in_threadpool(gradcam.save_visualization, heatmap, original_img, visualization_path)
                 logger.info(f"Saved Grad-CAM visualization to: {visualization_path}")
+                relative_visualization_path = f"predictions/{vis_filename}"
             except Exception as e:
                 logger.error(f"Failed to generate Grad-CAM visualization: {e}", exc_info=e)
                 visualization_path = None
+                relative_visualization_path = None
 
         total_duration = time.perf_counter() - start_time
         
@@ -558,6 +597,16 @@ async def predict_species(
             }
         )
         
+        # Fetch enrichment details only for confident predictions
+        enrichment = None
+        if not is_uncertain:
+            try:
+                from backend.species_enrichment import get_species_enrichment
+                enrichment = get_species_enrichment(predicted_species)
+            except Exception as e:
+                logger.error(f"Failed to fetch species enrichment for {predicted_species}: {e}", exc_info=e)
+                enrichment = None
+
         return PredictionResponse(
             species=species_response,
             confidence=confidence,
@@ -568,8 +617,9 @@ async def predict_species(
             prediction_reliability=prediction_reliability,
             explanation_text=explanation_text,
             uncertainty_reason=uncertainty_reason,
-            visualization_path=visualization_path,
+            visualization_path=relative_visualization_path,
             metadata=meta_dict,
+            enrichment=enrichment,
             inference_time_ms=inference_time_ms
         )
     except Exception as e:

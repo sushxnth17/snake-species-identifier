@@ -16,6 +16,18 @@ _class_names: Optional[List[str]] = None
 _calibrator: Optional[ConfidenceCalibrator] = None
 _gradcam: Optional[GradCAM] = None
 
+# Monkey-patch Keras Dense layer deserialization for compatibility with older Keras versions (e.g. < 3.13)
+# where 'quantization_config' is not recognized as a valid keyword argument.
+try:
+    import keras
+    original_dense_init = keras.layers.Dense.__init__
+    def patched_dense_init(self, *args, **kwargs):
+        kwargs.pop("quantization_config", None)
+        original_dense_init(self, *args, **kwargs)
+    keras.layers.Dense.__init__ = patched_dense_init
+except Exception as patch_err:
+    logger.debug(f"Failed to apply Keras Dense serialization patch: {patch_err}")
+
 def load_model() -> tf.keras.Model:
     """
     Loads the TensorFlow Keras model from disk and caches it in memory.

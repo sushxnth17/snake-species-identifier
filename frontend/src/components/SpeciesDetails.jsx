@@ -14,7 +14,7 @@ export default function SpeciesDetails({ metadata }) {
 
   return (
     <div className="species-details-container">
-      <h4 className="details-section-heading">Species Profile</h4>
+      <h3 className="details-section-heading">Species Profile</h3>
       
       <div className="details-grid">
         <div className="details-item">

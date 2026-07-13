@@ -18,15 +18,15 @@ export default function VenomStatus({ venomous }) {
         <div className="venom-title-group">
           <span className="venom-badge-desc">Venom Classification</span>
           <h4 className="venom-label-heading">
-            {venomous ? 'Venomous' : 'Non-venomous'}
+            {venomous ? 'Predicted as venomous' : 'Predicted as non-venomous'}
           </h4>
         </div>
       </div>
       
       <p className="venom-guideline">
         {venomous 
-          ? 'Seek medical attention immediately in case of a bite. Do not attempt to touch, capture, or agitate this snake.'
-          : 'Though this species is classified as non-venomous, keep a safe distance. Any snake bite can cause injury, infection, or allergic reactions.'
+          ? 'Seek emergency medical attention immediately in case of a bite. Do not attempt to touch, handle, or capture this snake.'
+          : 'Though this species is predicted as non-venomous, keep a safe distance. Do not attempt to touch, handle, or capture this snake. Any snake bite can cause injury, infection, or allergic reactions.'
         }
       </p>
     </div>

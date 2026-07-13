@@ -34,3 +34,4 @@ httpx==0.28.1
 # Utilities
 # ==============================================================================
 # No external utility dependencies are required. All utilities use the Python standard library.
+groq==0.9.0

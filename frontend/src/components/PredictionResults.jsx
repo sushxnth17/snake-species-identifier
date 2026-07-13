@@ -3,6 +3,9 @@ import ConfidenceIndicator from './ConfidenceIndicator';
 import VenomStatus from './VenomStatus';
 import TopPredictions from './TopPredictions';
 import SpeciesDetails from './SpeciesDetails';
+import ExplainabilityViewer from './ExplainabilityViewer';
+import SpeciesKnowledge from './SpeciesKnowledge';
+import SafetyGuidance from './SafetyGuidance';
 import '../styles/PredictionResults.css';
 
 /**
@@ -13,7 +16,7 @@ import '../styles/PredictionResults.css';
  * @param {Object} props
  * @param {Object} props.result - Complete FastAPI PredictionResponse object
  */
-export default function PredictionResults({ result }) {
+export default function PredictionResults({ result, previewUrl }) {
   const containerRef = useRef(null);
 
   // Automatically scroll and move keyboard focus to the results container for screen readers
@@ -35,7 +38,9 @@ export default function PredictionResults({ result }) {
     confidence_interpretation,
     explanation_text,
     uncertainty_reason,
+    visualization_path,
     metadata,
+    enrichment,
     inference_time_ms
   } = result;
 
@@ -51,9 +56,9 @@ export default function PredictionResults({ result }) {
         <div className="uncertain-results-wrapper">
           <header className="results-header">
             <span className="results-pre-title" id="results-title">Analysis Result</span>
-            <h3 className="primary-identification-heading warning-text">
+            <h2 className="primary-identification-heading warning-text">
               Uncertain identification
-            </h3>
+            </h2>
             <p className="uncertainty-explanation">
               {uncertainty_reason || explanation_text || 'The model was unable to classify the species with sufficient confidence.'}
             </p>
@@ -89,9 +94,9 @@ export default function PredictionResults({ result }) {
         <div className="confident-results-wrapper">
           <header className="results-header">
             <span className="results-pre-title" id="results-title">Most likely</span>
-            <h3 className="primary-identification-heading text-capitalize">
+            <h2 className="primary-identification-heading text-capitalize">
               {metadata?.common_name || species}
-            </h3>
+            </h2>
             {metadata?.scientific_name && (
               <p className="primary-scientific-subtitle">
                 {metadata.scientific_name}
@@ -126,6 +131,31 @@ export default function PredictionResults({ result }) {
           </div>
         </div>
       )}
+
+      {/* Safety Guidance Section */}
+      {metadata && (
+        <SafetyGuidance metadata={metadata} isUncertain={is_uncertain} />
+      )}
+
+      {/* Species Knowledge Enrichment Section */}
+      {enrichment ? (
+        <SpeciesKnowledge enrichment={enrichment} />
+      ) : (
+        !is_uncertain && (
+          <div className="species-knowledge-container animate-fade">
+            <p className="knowledge-disclaimer">
+              Additional species information isn't available right now.
+            </p>
+          </div>
+        )
+      )}
+
+      {/* Explainability Section */}
+      <ExplainabilityViewer
+        visualizationPath={visualization_path}
+        previewUrl={previewUrl}
+        isUncertain={is_uncertain}
+      />
 
       {/* Footer Benchmark Analytics */}
       <footer className="results-footer">

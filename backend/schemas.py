@@ -38,6 +38,16 @@ class SnakeMetadata(BaseModel):
             "5. DO NOT cut the bite site, apply a tourniquet, or try to suck out the venom."
         ]
     )
+    first_aid_steps: List[str] = Field(
+        ...,
+        description="Sequential list of first-aid actions to perform.",
+        examples=[["Keep the victim calm.", "Immobilize the bitten limb."]]
+    )
+    avoid_actions: List[str] = Field(
+        ...,
+        description="Actions the user must avoid to prevent worsening the condition.",
+        examples=[["DO NOT cut the bite site.", "DO NOT apply a tourniquet."]]
+    )
 
 class TopPrediction(BaseModel):
     species: str = Field(
@@ -47,6 +57,33 @@ class TopPrediction(BaseModel):
     confidence: float = Field(
         ...,
         description="Confidence score of the ranked prediction."
+    )
+
+class SpeciesEnrichment(BaseModel):
+    overview: str = Field(
+        ...,
+        description="A concise herpetological overview of the species, approximately 2 to 4 sentences.",
+        examples=["The spectacled cobra is a venomous snake species found in India. It is easily recognized by its hood."]
+    )
+    habitats: List[str] = Field(
+        ...,
+        description="Common habitat types for this species.",
+        examples=[["grasslands", "deciduous forests"]]
+    )
+    appearance: List[str] = Field(
+        ...,
+        description="Commonly described physical traits of the species (for educational purposes only).",
+        examples=[["signature hood", "spectacled markings"]]
+    )
+    behavior: str = Field(
+        ...,
+        description="A concise description of the species' typical behavior.",
+        examples=["Nocturnal, typically docile unless cornered."]
+    )
+    interesting_facts: List[str] = Field(
+        ...,
+        description="A list of interesting and educational herpetological facts.",
+        examples=[["Known for its iconic defensive posture"]]
     )
 
 class PredictionResponse(BaseModel):
@@ -91,12 +128,16 @@ class PredictionResponse(BaseModel):
     )
     visualization_path: Optional[str] = Field(
         default=None,
-        description="The absolute path to the saved Grad-CAM visualization image, if generated.",
-        examples=["C:\\Users\\susha\\OneDrive\\Desktop\\snake\\predictions\\gradcam_20260710_123456.png"]
+        description="The relative URL path to the saved Grad-CAM visualization image, if generated.",
+        examples=["predictions/gradcam_20260710_123456.png"]
     )
     metadata: SnakeMetadata = Field(
         ...,
         description="Taxonomic and safety guidelines metadata corresponding to the predicted species."
+    )
+    enrichment: Optional[SpeciesEnrichment] = Field(
+        default=None,
+        description="Structured educational herpetological information about the predicted species, if available."
     )
     inference_time_ms: float = Field(
         ...,

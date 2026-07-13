@@ -22,6 +22,7 @@ export default function App() {
   const [error, setError] = useState(null);
 
   const uploaderRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   // Manage preview URL lifecycle reactive to the selected file to prevent memory leaks
   useEffect(() => {
@@ -39,6 +40,15 @@ export default function App() {
     };
   }, [file]);
 
+  // Clean up any active request when component unmounts
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   const handleScrollToUploader = () => {
     if (uploaderRef.current) {
       uploaderRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -48,9 +58,16 @@ export default function App() {
   };
 
   const handleFileSelect = (selectedFile) => {
+    // Abort active prediction request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
     setValidationError(null);
     setPrediction(null);
     setError(null);
+    setIsLoading(false);
 
     if (!selectedFile) {
       setFile(null);
@@ -68,25 +85,53 @@ export default function App() {
   };
 
   const handleFileClear = () => {
+    // Abort active prediction request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
     setFile(null);
     setValidationError(null);
     setPrediction(null);
     setError(null);
+    setIsLoading(false);
   };
 
   const handleUpload = async (imageFile) => {
+    // Abort any running prediction requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setIsLoading(true);
     setError(null);
     setPrediction(null);
     
     try {
-      const response = await apiService.predictImage(imageFile);
-      setPrediction(response);
+      const response = await apiService.predictImage(imageFile, controller.signal);
+      if (abortControllerRef.current === controller) {
+        setPrediction(response);
+        abortControllerRef.current = null;
+      }
     } catch (err) {
-      const normalized = normalizeApiError(err);
-      setError(normalized.message);
+      if (err.name === 'AbortError') {
+        // Ignored, this request was cancelled intentionally
+        return;
+      }
+      if (abortControllerRef.current === controller) {
+        const normalized = normalizeApiError(err);
+        setError(normalized.message);
+        abortControllerRef.current = null;
+      }
     } finally {
-      setIsLoading(false);
+      if (abortControllerRef.current === controller) {
+        setIsLoading(false);
+        abortControllerRef.current = null;
+      }
     }
   };
 
@@ -115,7 +160,7 @@ export default function App() {
         />
         
         {prediction && (
-          <PredictionResults result={prediction} />
+          <PredictionResults result={prediction} previewUrl={previewUrl} />
         )}
         
         <SafetyDisclaimer />

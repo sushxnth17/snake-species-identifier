@@ -15,7 +15,18 @@ SNAKE_METADATA: Dict[str, Dict[str, Any]] = {
             "3. Remove rings, bracelets, or tight clothing near the bite area.\n"
             "4. Transport the victim immediately to the nearest medical facility with anti-venom.\n"
             "5. DO NOT cut the bite site, apply a tourniquet, or try to suck out the venom."
-        )
+        ),
+        "first_aid_steps": [
+            "Keep the victim calm and reassured to slow venom circulation.",
+            "Immobilize the bitten limb using a splint or loose bandage.",
+            "Remove rings, bracelets, or tight clothing near the bite area.",
+            "Transport the victim immediately to the nearest medical facility with anti-venom."
+        ],
+        "avoid_actions": [
+            "DO NOT cut the bite site.",
+            "DO NOT apply a tourniquet.",
+            "DO NOT try to suck out the venom."
+        ]
     },
     "krait": {
         "common_name": "Common Krait",
@@ -29,7 +40,18 @@ SNAKE_METADATA: Dict[str, Dict[str, Any]] = {
             "3. Seek emergency medical attention immediately. Keep breathing airways clear.\n"
             "4. DO NOT wash the bite site (venom residue can help identify the snake later).\n"
             "5. DO NOT cut the wound, use ice, or apply tight tourniquets."
-        )
+        ),
+        "first_aid_steps": [
+            "Keep the victim completely still. Krait bites can be painless but are highly neurotoxic.",
+            "Apply a broad pressure immobilization bandage over the entire bitten limb.",
+            "Seek emergency medical attention immediately. Keep breathing airways clear."
+        ],
+        "avoid_actions": [
+            "DO NOT wash the bite site (venom residue can help identify the snake later).",
+            "DO NOT cut the wound.",
+            "DO NOT use ice.",
+            "DO NOT apply tight tourniquets."
+        ]
     }
 }
 
@@ -39,7 +61,17 @@ DEFAULT_METADATA: Dict[str, Any] = {
     "venomous": False,
     "description": "No detailed safety information is available for this species.",
     "habitat": "Unknown",
-    "first_aid": "Keep the victim calm, immobilize the bitten limb, and seek emergency medical care immediately."
+    "first_aid": "Keep the victim calm, immobilize the bitten limb, and seek emergency medical care immediately.",
+    "first_aid_steps": [
+        "Keep the victim calm and reassured.",
+        "Immobilize the bitten limb.",
+        "Seek emergency medical care immediately."
+    ],
+    "avoid_actions": [
+        "DO NOT cut the bite site.",
+        "DO NOT apply a tourniquet.",
+        "DO NOT try to suck out the venom."
+    ]
 }
 
 UNCERTAIN_METADATA: Dict[str, Any] = {
@@ -55,7 +87,19 @@ UNCERTAIN_METADATA: Dict[str, Any] = {
         "4. Remove rings, bracelets, or tight clothing near the bite area.\n"
         "5. Transport the victim immediately to the nearest medical facility with anti-venom.\n"
         "6. DO NOT cut the bite site, apply a tourniquet, or try to suck out the venom."
-    )
+    ),
+    "first_aid_steps": [
+        "Treat the snake as venomous out of an abundance of caution.",
+        "Keep the victim calm and reassured to slow venom circulation.",
+        "Immobilize the bitten limb using a splint or loose bandage.",
+        "Remove rings, bracelets, or tight clothing near the bite area.",
+        "Transport the victim immediately to the nearest medical facility with anti-venom."
+    ],
+    "avoid_actions": [
+        "DO NOT cut the bite site.",
+        "DO NOT apply a tourniquet.",
+        "DO NOT try to suck out the venom."
+    ]
 }
 
 def get_snake_metadata(species_name: str) -> Dict[str, Any]:

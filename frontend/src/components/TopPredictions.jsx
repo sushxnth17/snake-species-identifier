@@ -12,7 +12,7 @@ export default function TopPredictions({ predictions }) {
 
   return (
     <div className="top-predictions-container">
-      <h4 className="top-predictions-heading">Closest matches</h4>
+      <h3 className="top-predictions-heading">Closest matches</h3>
       
       <div className="top-predictions-list">
         {predictions.map((candidate, idx) => {

@@ -68,19 +68,22 @@ def test_api_prediction_with_confidence_tier():
     mock_calibrator.threshold_high = 0.90
     mock_calibrator.threshold_medium = 0.60
     
-    with patch("backend.predictor.preprocess_image", return_value=mock_preprocessed), \
-         patch("backend.predictor.predict", return_value=mock_raw_predictions), \
-         patch("backend.dependencies.get_model", return_value=MagicMock()), \
-         patch("backend.dependencies.get_class_names", return_value=mock_classes), \
-         patch("backend.dependencies.get_calibrator", return_value=mock_calibrator):
-        
-        dummy_png = Image.new("RGB", (10, 10), color="blue")
-        buf = io.BytesIO()
-        dummy_png.save(buf, format="PNG")
-        files = {"file": ("test.png", buf.getvalue(), "image/png")}
-        
-        response = client.post("/predict", files=files)
-        assert response.status_code == 200
+    from backend.dependencies import get_model, get_class_names, get_calibrator
+    app.dependency_overrides[get_model] = lambda: MagicMock()
+    app.dependency_overrides[get_class_names] = lambda: mock_classes
+    app.dependency_overrides[get_calibrator] = lambda: mock_calibrator
+    
+    try:
+        with patch("backend.predictor.preprocess_image", return_value=mock_preprocessed), \
+             patch("backend.predictor.predict", return_value=mock_raw_predictions):
+            
+            dummy_png = Image.new("RGB", (10, 10), color="blue")
+            buf = io.BytesIO()
+            dummy_png.save(buf, format="PNG")
+            files = {"file": ("test.png", buf.getvalue(), "image/png")}
+            
+            response = client.post("/predict", files=files)
+            assert response.status_code == 200
         
         data = response.json()
         assert "confidence_level" in data
@@ -99,6 +102,8 @@ def test_api_prediction_with_confidence_tier():
         assert data["prediction_reliability"] == "High"
         assert "exceeds" in data["confidence_interpretation"]
         assert "highly reliable" in data["explanation_text"]
+    finally:
+        app.dependency_overrides.clear()
 
 def test_api_prediction_uncertain():
     client = TestClient(app)
@@ -114,19 +119,22 @@ def test_api_prediction_uncertain():
     mock_calibrator.bin_boundaries = np.linspace(0.0, 1.0, 11)
     mock_calibrator.bin_accuracies = [0.05, 0.15, 0.25, 0.35, 0.45, 0.30, 0.75, 0.85, 0.95, 0.95]
     
-    with patch("backend.predictor.preprocess_image", return_value=mock_preprocessed), \
-         patch("backend.predictor.predict", return_value=mock_raw_predictions), \
-         patch("backend.dependencies.get_model", return_value=MagicMock()), \
-         patch("backend.dependencies.get_class_names", return_value=mock_classes), \
-         patch("backend.dependencies.get_calibrator", return_value=mock_calibrator):
-        
-        dummy_png = Image.new("RGB", (10, 10), color="blue")
-        buf = io.BytesIO()
-        dummy_png.save(buf, format="PNG")
-        files = {"file": ("test.png", buf.getvalue(), "image/png")}
-        
-        response = client.post("/predict", files=files)
-        assert response.status_code == 200
+    from backend.dependencies import get_model, get_class_names, get_calibrator
+    app.dependency_overrides[get_model] = lambda: MagicMock()
+    app.dependency_overrides[get_class_names] = lambda: mock_classes
+    app.dependency_overrides[get_calibrator] = lambda: mock_calibrator
+    
+    try:
+        with patch("backend.predictor.preprocess_image", return_value=mock_preprocessed), \
+             patch("backend.predictor.predict", return_value=mock_raw_predictions):
+            
+            dummy_png = Image.new("RGB", (10, 10), color="blue")
+            buf = io.BytesIO()
+            dummy_png.save(buf, format="PNG")
+            files = {"file": ("test.png", buf.getvalue(), "image/png")}
+            
+            response = client.post("/predict", files=files)
+            assert response.status_code == 200
         
         data = response.json()
         assert "confidence_level" in data
@@ -150,3 +158,5 @@ def test_api_prediction_uncertain():
         # Verify safety-first metadata is returned (venomous=True)
         assert data["metadata"]["venomous"] is True
         assert "Uncertain Species" in data["metadata"]["common_name"]
+    finally:
+        app.dependency_overrides.clear()
