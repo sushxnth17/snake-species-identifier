@@ -1,4 +1,4 @@
-# 🐍 Snakify
+#  Snakify
 
 Snakify is a snake species identification web application that analyzes uploaded snake images using a deep learning model and presents confidence-aware prediction results.
 
