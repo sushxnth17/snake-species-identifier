@@ -49,7 +49,7 @@ For uncertain predictions, Snakify avoids presenting a species as definitively i
 
 ## Key Features
 
-### 🐍 Image-Based Snake Classification
+###  Image-Based Snake Classification
 
 - Upload a snake image for species prediction.
 - Uses a MobileNetV2 transfer learning model.
@@ -58,7 +58,7 @@ For uncertain predictions, Snakify avoids presenting a species as definitively i
 - Returns the most likely species and prediction confidence.
 - Provides top prediction candidates where available.
 
-### 📊 Confidence-Aware Predictions
+###  Confidence-Aware Predictions
 
 - Uses confidence calibration and reliability interpretation.
 - Distinguishes confident and uncertain predictions.
@@ -66,7 +66,7 @@ For uncertain predictions, Snakify avoids presenting a species as definitively i
 - Preserves top prediction candidates for uncertain results.
 - Keeps prediction uncertainty separate from API errors.
 
-### 🔥 Grad-CAM Explainability
+###  Grad-CAM Explainability
 
 Snakify integrates Grad-CAM to help visualize which image regions influenced the model's prediction.
 
@@ -79,7 +79,7 @@ The frontend displays:
 
 Grad-CAM is used as an interpretation tool and does not independently identify the snake.
 
-### 🧠 Groq Species Knowledge Enrichment
+###  Groq Species Knowledge Enrichment
 
 For sufficiently reliable predictions, Snakify uses the Groq API to generate structured educational information about the predicted species.
 
@@ -139,7 +139,7 @@ Provider errors, malformed responses, timeouts, and validation failures are not 
 
 Groq failures do not prevent snake predictions from succeeding.
 
-### ⚠️ Trusted Safety Guidance
+###  Trusted Safety Guidance
 
 Safety-critical information is kept separate from Groq-generated educational content.
 
@@ -161,7 +161,7 @@ For uncertain predictions, the snake is treated as potentially dangerous.
 
 The application does not use the top prediction candidate to reassure users when the overall prediction is uncertain.
 
-### 🖼️ React Image Upload Experience
+###  React Image Upload Experience
 
 The frontend supports:
 
@@ -177,7 +177,7 @@ The frontend supports:
 
 Changing or removing an image clears stale prediction, Grad-CAM, enrichment, and safety state.
 
-### ⚛️ React + Vite Frontend
+###  React + Vite Frontend
 
 The Snakify frontend is built using React and Vite.
 
@@ -197,7 +197,7 @@ The frontend includes:
 - Responsive layouts.
 - Accessibility improvements.
 
-### 🚀 FastAPI Prediction Service
+###  FastAPI Prediction Service
 
 The backend provides:
 
